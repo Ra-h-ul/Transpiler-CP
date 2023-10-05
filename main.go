@@ -1364,7 +1364,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "gocode.txt"
+	inputFilename := "gocode2.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(versionString)
@@ -1447,9 +1447,30 @@ func main() {
 	err = cmd2.Run()
 	if err != nil {
 		//fmt.Println("Failed to compile this with g++:")
+		fmt.Println("In")
+
+		cppSource = `
+		template <typename T>
+		void _format_output(std::ostream& out, const T& str) {
+			// Pad the string with spaces so that it is at least 20 characters wide.
+			out << str;
+		}
+		
+					
+				  
+				` + cppSource
+
+		cppSource = `
+#include <iostream>	
+#include <iomanip>
+#include <string>		
+		` + cppSource
+
 		fmt.Println(cppSource)
-		//fmt.Println("Errors:")
-		//fmt.Println(errors.String())
+		writeFile("cppcode5.cpp", cppSource)
+
+		// fmt.Println("Errors:")
+		// fmt.Println(errors.String())
 		//log.Fatal(err)
 	}
 	compiledBytes, err := ioutil.ReadFile(tempFileName)
@@ -1469,4 +1490,19 @@ func main() {
 		//fmt.Println(cppSource)
 	}
 
+}
+
+func writeFile(filename, data string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

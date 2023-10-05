@@ -1,0 +1,27 @@
+
+#include <iostream>	
+#include <iomanip>
+#include <string>		
+		
+		template <typename T>
+		void _format_output(std::ostream& out, const T& str) {
+			// Pad the string with spaces so that it is at least 20 characters wide.
+			out << str;
+		}
+		
+					
+				  
+				#include <iostream>
+
+
+
+
+auto main() -> int {
+auto x = 10;
+auto y = 6;
+auto z = x+y;
+_format_output(std::cout, z);
+std::cout << std::endl;
+	
+return 0;
+}
