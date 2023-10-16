@@ -1497,9 +1497,14 @@ func containsSubstring(str, substr string) bool {
 }
 
 func formatting(data string) string {
+	// temporary
 	ans := data
 	ans = strings.Replace(data, "Math.Sqrt", "sqrt", -1)
 	ans = strings.Replace(ans, "float64", "double", -1)
+	ans = strings.Replace(ans, "+ =", "+=", -1)
+	ans = strings.Replace(ans, "- =", "-=", -1)
+	ans = strings.Replace(ans, "* =", "*=", -1)
+	ans = strings.Replace(ans, "/ =", "/=", -1)
 
 	return ans
 
