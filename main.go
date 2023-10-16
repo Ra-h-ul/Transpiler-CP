@@ -1462,7 +1462,7 @@ template <typename T>
 		cppSource = `#include <bits/stdc++.h>` + cppSource
 		cppSource = formatting(cppSource)
 		fmt.Println(cppSource)
-		writeFile("code_output.txt", cppSource)
+		writeFile("test5_CPP_output.cpp", cppSource)
 
 		// fmt.Println("Errors:")
 		// fmt.Println(errors.String())
