@@ -26,39 +26,39 @@ const (
 )
 
 var includeMap = map[string]string{
-	"std::tuple":                       "tuple",
-	"std::endl":                        "iostream",
-	"std::cout":                        "iostream",
-	"std::string":                      "string",
-	"std::size":                        "iterator",
-	"std::unordered_map":               "unordered_map",
-	"std::hash":                        "functional",
-	"std::size_t":                      "cstddef",
-	"std::int8_t":                      "cinttypes",
-	"std::int16_t":                     "cinttypes",
-	"std::int32_t":                     "cinttypes",
-	"std::int64_t":                     "cinttypes",
-	"std::uint8_t":                     "cinttypes",
-	"std::uint16_t":                    "cinttypes",
-	"std::uint32_t":                    "cinttypes",
-	"std::uint64_t":                    "cinttypes",
-	"printf":                           "cstdio",
-	"fprintf":                          "cstdio",
-	"sprintf":                          "cstdio",
-	"snprintf":                         "cstdio",
-	"std::stringstream":                "sstream",
-	"std::is_pointer":                  "type_traits",
-	"std::experimental::is_detected_v": "experimental/type_traits",
-	"std::shared_ptr":                  "memory",
-	"std::nullopt":                     "optional",
-	"EXIT_SUCCESS":                     "cstdlib",
-	"EXIT_FAILURE":                     "cstdlib",
-	"std::vector":                      "vector",
-	"std::unique_ptr":                  "memory",
-	"std::runtime_error":               "stdexcept",
-	"std::regex_replace":               "regex",
-	"std::regex_constants":             "regex",
-	"std::to_string":                   "string",
+	"std::tuple":                       "",
+	"std::endl":                        "",
+	"std::cout":                        "",
+	"std::string":                      "",
+	"std::size":                        "",
+	"std::unordered_map":               "",
+	"std::hash":                        "",
+	"std::size_t":                      "",
+	"std::int8_t":                      "",
+	"std::int16_t":                     "",
+	"std::int32_t":                     "",
+	"std::int64_t":                     "",
+	"std::uint8_t":                     "",
+	"std::uint16_t":                    "",
+	"std::uint32_t":                    "",
+	"std::uint64_t":                    "",
+	"printf":                           "",
+	"fprintf":                          "",
+	"sprintf":                          "",
+	"snprintf":                         "",
+	"std::stringstream":                "",
+	"std::is_pointer":                  "",
+	"std::experimental::is_detected_v": "",
+	"std::shared_ptr":                  "",
+	"std::nullopt":                     "",
+	"EXIT_SUCCESS":                     "",
+	"EXIT_FAILURE":                     "",
+	"std::vector":                      "",
+	"std::unique_ptr":                  "",
+	"std::runtime_error":               "",
+	"std::regex_replace":               "",
+	"std::regex_constants":             "",
+	"std::to_string":                   "",
 }
 
 var endings = []string{"{", ",", "}", ":"}
@@ -160,13 +160,13 @@ func WholeProgramReplace(source string) (output string) {
 		"make([]string, ":  "std::vector<" + TypeReplace("string") + "> (",
 		"make([]int, ":     "std::vector<" + TypeReplace("int") + "> (",
 		"make([]uint, ":    "std::vector<" + TypeReplace("uint") + "> (",
-		"make([]float64, ": "std::vector<" + TypeReplace("float64") + "> (",
-		"make([]float32, ": "std::vector<" + TypeReplace("float32") + "> (",
+		"make([]float64, ": "std::vector<" + TypeReplace("double") + "> (",
+		"make([]float32, ": "std::vector<" + TypeReplace("float") + "> (",
 		"-> []string":      "-> std::vector<" + TypeReplace("string") + ">",
 		"-> []int":         "-> std::vector<" + TypeReplace("int") + ">",
 		"-> []uint":        "-> std::vector<" + TypeReplace("uint") + ">",
-		"-> []float64":     "-> std::vector<" + TypeReplace("float64") + ">",
-		"-> []float32":     "-> std::vector<" + TypeReplace("float32") + ">",
+		"-> []float64":     "-> std::vector<" + TypeReplace("double") + ">",
+		"-> []float32":     "-> std::vector<" + TypeReplace("float") + ">",
 		"= nil)":           "= std::nullopt)",
 	}
 	for k, v := range replacements {
@@ -585,7 +585,7 @@ func AddIncludes(source string) (output string) {
 	includeString := ""
 	for k, v := range includeMap {
 		if strings.Contains(output, k) {
-			newInclude := "#include <" + v + ">\n"
+			newInclude := "" + v + ""
 			if !strings.Contains(includeString, newInclude) {
 				includeString += newInclude
 			}
@@ -1026,6 +1026,7 @@ func HashElements(source, keyType string, keyForBoth bool) string {
 		}
 		output += "{ " + strings.TrimSpace(pairElements[0]) + ", " + strings.TrimSpace(pairElements[1]) + " }"
 	}
+
 	return output + "}"
 }
 
@@ -1364,7 +1365,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "gocode2.txt"
+	inputFilename := "test.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(versionString)
@@ -1448,26 +1449,20 @@ func main() {
 	if err != nil {
 		//fmt.Println("Failed to compile this with g++:")
 		fmt.Println("In")
+		fmt.Println(err)
 
 		cppSource = `
-		template <typename T>
-		void _format_output(std::ostream& out, const T& str) {
-			// Pad the string with spaces so that it is at least 20 characters wide.
-			out << str;
-		}
-		
-					
-				  
-				` + cppSource
 
-		cppSource = `
-#include <iostream>	
-#include <iomanip>
-#include <string>		
-		` + cppSource
+template <typename T>
+	void _format_output(std::ostream& out, const T& str) 
+	{	
+		out << str;
+	}` + cppSource
 
+		cppSource = `#include <bits/stdc++.h>` + cppSource
+		cppSource = formatting(cppSource)
 		fmt.Println(cppSource)
-		writeFile("cppcode5.cpp", cppSource)
+		writeFile("code_output.txt", cppSource)
 
 		// fmt.Println("Errors:")
 		// fmt.Println(errors.String())
@@ -1489,6 +1484,24 @@ func main() {
 	} else {
 		//fmt.Println(cppSource)
 	}
+
+}
+
+func containsSubstring(str, substr string) bool {
+	for i := 0; i < len(str)-len(substr)+1; i++ {
+		if str[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func formatting(data string) string {
+	ans := data
+	ans = strings.Replace(data, "Math.Sqrt", "sqrt", -1)
+	ans = strings.Replace(ans, "float64", "double", -1)
+
+	return ans
 
 }
 
