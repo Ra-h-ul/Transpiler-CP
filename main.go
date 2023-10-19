@@ -40,18 +40,6 @@ func DeferCall(source string) string {
 	}
 }
 
-func IfSentence(source string) (output string) {
-	output = source
-	expression := strings.TrimSpace(utils.LeftBetweenRightmost(source, "if", "{"))
-	return "if (" + expression + ") {"
-}
-
-func ElseIfSentence(source string) (output string) {
-	output = source
-	expression := strings.TrimSpace(utils.LeftBetweenRightmost(source, "} else if", "{"))
-	return "} else if (" + expression + ") {"
-}
-
 func ForLoop(source string, encounteredHashMaps []string) string {
 	expression := strings.TrimSpace(utils.LeftBetween(source, "for", "{"))
 	if expression == "" {
@@ -123,41 +111,6 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 		}
 	}
 	return "for (" + expression + ") {"
-}
-
-func SwitchExpressionVariable() string {
-	return constants.SwitchPrefix + strconv.Itoa(constants.SwitchExpressionCounter)
-}
-
-func LabelName() string {
-	return constants.LabelPrefix + strconv.Itoa(constants.LabelCounter)
-}
-
-func Switch(source string) (output string) {
-	output = strings.TrimSpace(source)[len("switch "):]
-	if strings.HasSuffix(output, "{") {
-		output = strings.TrimSpace(output[:len(output)-1])
-	}
-	constants.SwitchExpressionCounter++
-	constants.FirstCase = true
-	return "auto&& " + SwitchExpressionVariable() + " = " + output + "; // switch on " + output
-}
-
-func Case(source string) (output string) {
-	output = source
-	s := utils.LeftBetween(output, " ", ":")
-	if constants.FirstCase {
-		constants.FirstCase = false
-		output = "if ("
-	} else {
-		output = "} else if ("
-	}
-	output += SwitchExpressionVariable() + " == " + s + ") { // case " + s
-	if constants.SwitchLabel != "" {
-		output += "\n" + constants.SwitchLabel + ":"
-		constants.SwitchLabel = ""
-	}
-	return output
 }
 
 // Return transformed line and the variable names
@@ -475,9 +428,9 @@ func go2cpp(source string) string {
 		} else if strings.HasPrefix(trimmedLine, "for") {
 			newLine = ForLoop(line, encounteredHashMaps)
 		} else if strings.HasPrefix(trimmedLine, "switch") {
-			newLine = Switch(line)
+			newLine = utils.Switch(line)
 		} else if strings.HasPrefix(trimmedLine, "case") {
-			newLine = Case(line)
+			newLine = utils.Case(line)
 		} else if strings.HasPrefix(trimmedLine, "return") {
 			if strings.HasPrefix(currentReturnType, constants.TupleType) {
 				elems := strings.SplitN(newLine, "return ", 2)
@@ -592,14 +545,14 @@ func go2cpp(source string) string {
 		} else if strings.HasPrefix(trimmedLine, "defer ") {
 			newLine = DeferCall(line)
 		} else if strings.HasPrefix(trimmedLine, "if ") {
-			newLine = IfSentence(line)
+			newLine = utils.IfSentence(line)
 			// TODO: Short variable names utils.Has the potential to ruin if expressions this way, do a smarter replacement
 			// TODO: Also do this for for loops, switches and other cases where this makes sense
 			for k, v := range functionVarMap {
 				newLine = strings.Replace(newLine, k, v, -1)
 			}
 		} else if strings.HasPrefix(trimmedLine, "} else if ") {
-			newLine = ElseIfSentence(line)
+			newLine = utils.ElseIfSentence(line)
 		} else if trimmedLine == "var (" {
 			inVar = true
 			continue
@@ -620,8 +573,8 @@ func go2cpp(source string) string {
 		} else if strings.HasPrefix(trimmedLine, "const ") {
 			newLine = ConstDeclaration(trimmedLine)
 		} else if trimmedLine == "fallthrough" {
-			newLine = "goto " + LabelName() + "; // fallthrough"
-			constants.SwitchLabel = LabelName()
+			newLine = "goto " + utils.LabelName() + "; // fallthrough"
+			constants.SwitchLabel = utils.LabelName()
 			constants.LabelCounter++
 		} else if constants.UnfinishedDeferFunction && trimmedLine == "}()" {
 			constants.UnfinishedDeferFunction = false
