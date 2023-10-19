@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Ra-hu-l/Transpiler-CP/src/replacements"
 	"github.com/Ra-hu-l/Transpiler-CP/src/utils"
 )
 
@@ -75,221 +76,13 @@ var (
 	unfinishedDeferFunction bool
 )
 
-// TODO: Make more robust, this easily breaks
-func LiteralStrings(source string) string {
-	return source
-}
-
-// TODO: Avoid whole-program replacements, if possible
-func WholeProgramReplace(source string) (output string) {
-	output = source
-
-	// TODO: Add these in a smarter way, with more supported types
-	replacements := map[string]string{
-		" string ":         " " + TypeReplace("string") + " ",
-		"(string ":         "(" + TypeReplace("string") + " ",
-		"return string":    "return std::to_string",
-		"make([]string, ":  "std::vector<" + TypeReplace("string") + "> (",
-		"make([]int, ":     "std::vector<" + TypeReplace("int") + "> (",
-		"make([]uint, ":    "std::vector<" + TypeReplace("uint") + "> (",
-		"make([]float64, ": "std::vector<" + TypeReplace("double") + "> (",
-		"make([]float32, ": "std::vector<" + TypeReplace("float") + "> (",
-		"-> []string":      "-> std::vector<" + TypeReplace("string") + ">",
-		"-> []int":         "-> std::vector<" + TypeReplace("int") + ">",
-		"-> []uint":        "-> std::vector<" + TypeReplace("uint") + ">",
-		"-> []float64":     "-> std::vector<" + TypeReplace("double") + ">",
-		"-> []float32":     "-> std::vector<" + TypeReplace("float") + ">",
-		"= nil)":           "= std::nullopt)",
-	}
-	for k, v := range replacements {
-		output = strings.Replace(output, k, v, -1)
-	}
-	return output
-}
-
-func AddFunctions(source string, useFormatOutput, haveStructs bool) (output string) {
-
-	// TODO: Make the fmtSprintf implementation more watertight. Use variadic templates and parameter packs, while waiting for std::format to arrive in the C++20 implementations.
-
-	output = source
-	replacements := map[string]string{
-		"strconv.ParseFloat": `using error = std::optional<std::string>;
-auto strconvParseFloat(std::string s, int bitSize) -> std::tuple<double, error> {
-	try {
-		return std::tuple { std::stod(s), std::nullopt };
-	} catch (const std::invalid_argument& ia) {
-		return std::tuple { 0.0, std::optional { "invalid argument" } };
-	}
-}
-`,
-		"strconv.ParseInt": `using error = std::optional<std::string>;
-auto strconvParseInt(std::string s, int base, int bitSize) -> std::tuple<int, error> {
-	try {
-		return std::tuple { std::stoi(s), std::nullopt };
-	} catch (const std::invalid_argument& ia) {
-		return std::tuple { 0.0, std::optional { "invalid argument" } };
-	}
-}
-`,
-		"strings.Contains":  `inline auto stringsContains(std::string const& haystack, std::string const& needle) -> bool { return haystack.find(needle) != std::string::npos; }`,
-		"strings.HasPrefix": `inline auto stringsHasPrefix(std::string const& haystack, std::string const& prefix) -> auto { return 0 == haystack.find(prefix); }`,
-		"_format_output": `template<typename T>
-using _str_t = decltype( std::declval<T&>()._str() );
-
-template<typename T>
-using _p_str_t = decltype( std::declval<T&>()->_str() );
-
-template <typename T> void _format_output(std::ostream& out, T x)
-{
-    if constexpr (std::is_same<T, bool>::value) {
-        out << std::boolalpha << x << std::noboolalpha;
-    } else if constexpr (std::is_integral<T>::value) {
-        out << static_cast<int>(x);
-    } else if constexpr (std::is_object<T>::value && !std::is_pointer<T>::value && std::experimental::is_detected_v<_str_t, T>) {
-        out << x._str();
-    } else if constexpr (std::is_object<T>::value && std::is_pointer<T>::value && std::experimental::is_detected_v<_p_str_t, T>) {
-        out << "&" << x->_str();
-    } else {
-        out << x;
-    }
-}`,
-		"strings.TrimSpace": `inline auto stringsTrimSpace(std::string const& s) -> std::string { std::string news {}; for (auto l : s) { if (l != ' ' && l != '\n' && l != '\t' && l != '\v' && l != '\f' && l != '\r') { news += l; } } return news; }`,
-		"fmt.Sprintf": `
-template <typename T>
-std::string fmtSprintf(const std::string& fmt, T arg1)
-{
-    std::string tmp = fmt;
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg1), std::regex_constants::format_first_only);
-    return tmp;
-}
-template <typename T>
-std::string fmtSprintf(const std::string& fmt, T arg1, T arg2)
-{
-    std::string tmp = fmt;
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg1), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg2), std::regex_constants::format_first_only);
-    return tmp;
-}
-template <typename T>
-std::string fmtSprintf(const std::string& fmt, T arg1, T arg2, T arg3)
-{
-    std::string tmp = fmt;
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg1), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg2), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg3), std::regex_constants::format_first_only);
-    return tmp;
-}
-template <typename T>
-std::string fmtSprintf(const std::string& fmt, T arg1, T arg2, T arg3, T arg4)
-{
-    std::string tmp = fmt;
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg1), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg2), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg3), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg4), std::regex_constants::format_first_only);
-    return tmp;
-}
-template <typename T>
-std::string fmtSprintf(const std::string& fmt, T arg1, T arg2, T arg3, T arg4, T arg5)
-{
-    std::string tmp = fmt;
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg1), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg2), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg3), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg4), std::regex_constants::format_first_only);
-    tmp = std::regex_replace(tmp, std::regex("%(s|v|d|f)"), std::to_string(arg5), std::regex_constants::format_first_only);
-    return tmp;
-}
-`,
-		"len": `
-template <typename T>
-inline auto len(T x) -> int { return x.size(); }
-`,
-	}
-	if useFormatOutput && !haveStructs {
-		replacements["_format_output"] = `template <typename T> void _format_output(std::ostream& out, T x)
-		
-			{
-			    if constexpr (std::is_same<T, bool>::value) {
-			        out << std::boolalpha << x << std::noboolalpha;
-			    } else if constexpr (std::is_integral<T>::value) {
-			        out << static_cast<int>(x);
-			    } else {
-			        out << x;
-			    }
-			}`
-		replacements["_format_output"] = ""
-	}
-	for k, v := range replacements {
-		if strings.Contains(output, k) {
-			output = strings.Replace(output, k, strings.Replace(k, ".", "", -1), -1)
-			output = v + "\n" + output
-		}
-	}
-	return output
-}
-
-// Name and type is used to keep a variable name and a variable type
-type NameAndType struct {
-	name string
-	typ  string
-}
-
-// FunctionArguments transforms the arguments given to a function
-func FunctionArguments(source string) string {
-	namesAndTypes := make([]NameAndType, 0)
-	// First find all names and all types
-	currentType := ""
-	currentName := ""
-	splitted := strings.Split(source, ",")
-	for i := len(splitted) - 1; i >= 0; i-- {
-		nameAndMaybeType := strings.TrimSpace(splitted[i])
-		if strings.Contains(nameAndMaybeType, " ") {
-			nameAndType := strings.Split(nameAndMaybeType, " ")
-			currentType = TypeReplace(strings.Join(nameAndType[1:], " "))
-			currentName = nameAndType[0]
-		} else {
-			currentName = nameAndMaybeType
-		}
-		namesAndTypes = append(namesAndTypes, NameAndType{currentName, currentType})
-		//fmt.Println("NAME: " + currentName + ", TYPE: " + currentType)
-	}
-	cppSignature := ""
-	for i := len(namesAndTypes) - 1; i >= 0; i-- {
-		//fmt.Println(namesAndTypes[i])
-		cppSignature += namesAndTypes[i].typ + " " + namesAndTypes[i].name
-		if i > 0 {
-			cppSignature += ", "
-		}
-	}
-	return strings.TrimSpace(cppSignature)
-}
-
-// FunctionRetvals transforms the return values from a function
-func FunctionRetvals(source string) (output string) {
-	if len(strings.TrimSpace(source)) == 0 {
-		return source
-	}
-	output = source
-	if strings.Contains(output, "(") {
-		s := utils.GreedyBetween(output, "(", ")")
-		retvals := FunctionArguments(s)
-		if strings.Contains(retvals, ",") {
-			output = "(" + retvals + ")"
-		} else {
-			output = retvals
-		}
-	}
-	return strings.TrimSpace(output)
-}
-
 // CPPTypes picks out the types given a list of C++ arguments with name and type
 func CPPTypes(args string) string {
 	words := strings.Split(utils.LeftBetween(args, "(", ")"), ",")
 	var atypes []string
 	for _, word := range words {
 		elems := strings.Split(strings.TrimSpace(word), " ")
-		t := TypeReplace(elems[0])
+		t := replacements.TypeReplace(elems[0])
 		atypes = append(atypes, t)
 	}
 	return strings.Join(atypes, ", ")
@@ -302,15 +95,15 @@ func FunctionSignature(source string) (output, returntype, name string) {
 		return source, "", ""
 	}
 	output = source
-	args := FunctionArguments(utils.LeftBetween(output, "(", ")"))
+	args := utils.FunctionArguments(utils.LeftBetween(output, "(", ")"))
 	// Has return values in a parenthesis
 	var rets string
 	if strings.Contains(output, ") (") {
 		// There is a parenthesis with return types in the function signature
-		rets = FunctionRetvals(utils.Between(output, ")", "{", false, true))
+		rets = utils.FunctionRetvals(utils.Between(output, ")", "{", false, true))
 	} else {
 		// There is not a parenthesis with return types in the function signature
-		rets = FunctionRetvals(utils.Between(output, ")", "{", true, true))
+		rets = utils.FunctionRetvals(utils.Between(output, ")", "{", true, true))
 	}
 	if strings.Contains(rets, ",") {
 		// Multiple return
@@ -583,51 +376,6 @@ func ElseIfSentence(source string) (output string) {
 	return "} else if (" + expression + ") {"
 }
 
-func TypeReplace(source string) string {
-	// TODO: uintptr, complex64 and complex128
-	trimmed := strings.TrimSpace(source)
-	// For pointer types, move the star
-	if strings.HasPrefix(trimmed, "*") {
-		trimmed = trimmed[1:] + "*"
-	}
-	switch trimmed {
-	case "string":
-		return "std::string"
-	case "float64":
-		return "double"
-	case "float32":
-		return "float"
-	case "uint64":
-		return "std::uint64_t"
-	case "uint32":
-		return "std::uint32_t"
-	case "uint16":
-		return "std::uint16_t"
-	case "uint8":
-		return "std::uint8_t"
-	case "int64":
-		return "std::int64_t"
-	case "int32":
-		return "std::int32_t"
-	case "int16":
-		return "std::int16_t"
-	case "int8":
-		return "std::int8_t"
-	case "byte":
-		return "std::uint8_t"
-	case "rune":
-		return "std::int32_t"
-	case "uint":
-		return "unsigned int"
-	default:
-		if strings.HasPrefix(trimmed, "[]") {
-			innerType := trimmed[2:]
-			return "std::vector<" + TypeReplace(innerType) + ">"
-		}
-		return trimmed
-	}
-}
-
 func ForLoop(source string, encounteredHashMaps []string) string {
 	expression := strings.TrimSpace(utils.LeftBetween(source, "for", "{"))
 	if expression == "" {
@@ -750,7 +498,7 @@ func VarDeclarations(source string) (string, []string) {
 			fields = fields[1:]
 		}
 		if len(fields) == 2 {
-			return TypeReplace(fields[1]) + " " + fields[0] + " = " + right, []string{fields[0]}
+			return replacements.TypeReplace(fields[1]) + " " + fields[0] + " = " + right, []string{fields[0]}
 		} else if len(fields) > 2 {
 			if strings.Contains(source, ",") {
 				leftFields := strings.Fields(left)
@@ -777,12 +525,12 @@ func VarDeclarations(source string) (string, []string) {
 					if strings.HasSuffix(varValue, ",") {
 						varValue = varValue[:len(varValue)-1]
 					}
-					sb.WriteString(TypeReplace(varType) + " " + varName + " = " + varValue)
+					sb.WriteString(replacements.TypeReplace(varType) + " " + varName + " = " + varValue)
 					varNames = append(varNames, varName)
 				}
 				return sb.String(), varNames
 			}
-			return TypeReplace(fields[1]) + " " + fields[0] + " " + strings.Join(fields[2:], " ") + " = " + right, []string{fields[0]}
+			return replacements.TypeReplace(fields[1]) + " " + fields[0] + " " + strings.Join(fields[2:], " ") + " = " + right, []string{fields[0]}
 		}
 		leftFields := strings.Fields(left)
 		if leftFields[0] == "var" {
@@ -813,7 +561,7 @@ func VarDeclarations(source string) (string, []string) {
 
 		varValue = strings.TrimPrefix(varValue, varType)
 
-		s := TypeReplace(varType) + " " + varName + " = " + varValue
+		s := replacements.TypeReplace(varType) + " " + varName + " = " + varValue
 		if withBracket {
 			if !strings.HasSuffix(s, "{") {
 				s += "{"
@@ -831,7 +579,7 @@ func VarDeclarations(source string) (string, []string) {
 		fields = fields[1:]
 	}
 	if len(fields) == 2 {
-		return TypeReplace(fields[1]) + " " + fields[0], []string{fields[0]}
+		return replacements.TypeReplace(fields[1]) + " " + fields[0], []string{fields[0]}
 	}
 	if strings.Contains(source, ",") {
 		// Comma separated variable names, with one common variable type,
@@ -848,7 +596,7 @@ func VarDeclarations(source string) (string, []string) {
 			if strings.HasSuffix(varName, ",") {
 				varName = varName[:len(varName)-1]
 			}
-			sb.WriteString(TypeReplace(varType) + " " + varName)
+			sb.WriteString(replacements.TypeReplace(varType) + " " + varName)
 			varNames = append(varNames, varName)
 		}
 
@@ -872,10 +620,10 @@ func TypeDeclaration(source string) (string, bool) {
 	words := strings.Split(left, " ")
 	if len(fields) == 2 {
 		// Type alias
-		return "using " + left + " = " + TypeReplace(right), false
+		return "using " + left + " = " + replacements.TypeReplace(right), false
 	} else if len(words) == 2 {
 		// Type alias
-		return "using " + words[1] + " " + words[0] + " = " + TypeReplace(right), false
+		return "using " + words[1] + " " + words[0] + " = " + replacements.TypeReplace(right), false
 	} else if strings.Contains(right, "struct") {
 		// type Vec3 struct {
 		// to
@@ -884,7 +632,7 @@ func TypeDeclaration(source string) (string, bool) {
 		return "class " + left + " { public:", true
 	} else if len(words) == 1 {
 		// Type alias
-		return "using " + left + " = " + TypeReplace(right), false
+		return "using " + left + " = " + replacements.TypeReplace(right), false
 	}
 	// Unrecognized
 	panic("Unrecognized type declaration: " + source)
@@ -915,7 +663,7 @@ func ConstDeclaration(source string) (output string) {
 		if words[0] == "const" {
 			return "const auto " + words[1] + " = " + right
 		}
-		return "const " + TypeReplace(words[1]) + " " + words[0] + " = " + right
+		return "const " + replacements.TypeReplace(words[1]) + " " + words[0] + " = " + right
 	}
 	// Unrecognized
 	panic("go2cpp: unrecognized const expression: " + source)
@@ -1000,7 +748,7 @@ func go2cpp(source string) string {
 
 	encounteredStructNames := []string{}
 	inStruct := false
-	usePrettyPrint := false
+	// usePrettyPrint := false
 	closingBracketNeedsASemicolon := false
 	for _, line := range strings.Split(source, "\n") {
 
@@ -1082,11 +830,11 @@ func go2cpp(source string) string {
 			}
 		} else if strings.HasPrefix(trimmedLine, "fmt.Print") || strings.HasPrefix(trimmedLine, "print") {
 			// _ is if "pretty print" functionality may be needed, for non-literal strings and numbers
-			var pp bool
-			newLine, pp = PrintStatement(trimmedLine)
-			if pp {
-				usePrettyPrint = true
-			}
+			// var pp bool
+			newLine, _ = PrintStatement(trimmedLine)
+			// if pp {
+			// 	usePrettyPrint = true
+			// }
 		} else if strings.Contains(trimmedLine, "=") && !strings.HasPrefix(trimmedLine, "var ") && !strings.HasPrefix(trimmedLine, "if ") && !strings.HasPrefix(trimmedLine, "const ") && !strings.HasPrefix(trimmedLine, "type ") {
 			elem := strings.SplitN(trimmedLine, "=", 2)
 			left := strings.TrimSpace(elem[0])
@@ -1140,15 +888,15 @@ func go2cpp(source string) string {
 						//newLine = line
 
 					}
-					theType := TypeReplace(utils.LeftBetween(right, "]", "{"))
+					theType := replacements.TypeReplace(utils.LeftBetween(right, "]", "{"))
 					fields := strings.SplitN(right, "{", 2)
 					newLine = theType + " " + strings.TrimSpace(left) + "[] {" + fields[1]
 				} else if strings.HasPrefix(right, "map[") {
 					hashName := strings.TrimSpace(left)
 					encounteredHashMaps = append(encounteredHashMaps, hashName)
 
-					keyType := TypeReplace(utils.LeftBetween(right, "map[", "]"))
-					valueType := TypeReplace(utils.LeftBetween(right, "]", "{"))
+					keyType := replacements.TypeReplace(utils.LeftBetween(right, "map[", "]"))
+					valueType := replacements.TypeReplace(utils.LeftBetween(right, "]", "{"))
 
 					closingBracket := strings.HasSuffix(strings.TrimSpace(right), "}")
 					if !closingBracket {
@@ -1281,12 +1029,11 @@ func go2cpp(source string) string {
 	output := strings.Join(lines, "\n")
 
 	// The order matters
-	output = LiteralStrings(output)
-	output = WholeProgramReplace(output)
+	output = replacements.WholeProgramReplace(output)
 
 	// The order matters
-	output = AddFunctions(output, usePrettyPrint, len(encounteredStructNames) > 0)
-	output = AddIncludes(output)
+	// output = AddFunctions(output, usePrettyPrint, len(encounteredStructNames) > 0)
+	// output = AddIncludes(output)
 
 	return output
 }
@@ -1297,7 +1044,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "./go_test_code/test3.txt"
+	inputFilename := "./go_test_code/test1.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(versionString)
