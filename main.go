@@ -275,17 +275,17 @@ inline auto len(T x) -> int { return x.size(); }
 `,
 	}
 	if useFormatOutput && !haveStructs {
-		//	replacements["_format_output"] = `template <typename T> void _format_output(std::ostream& out, T x)
-		//
-		//	{
-		//	    if constexpr (std::is_same<T, bool>::value) {
-		//	        out << std::boolalpha << x << std::noboolalpha;
-		//	    } else if constexpr (std::is_integral<T>::value) {
-		//	        out << static_cast<int>(x);
-		//	    } else {
-		//	        out << x;
-		//	    }
-		//	}`
+		replacements["_format_output"] = `template <typename T> void _format_output(std::ostream& out, T x)
+		
+			{
+			    if constexpr (std::is_same<T, bool>::value) {
+			        out << std::boolalpha << x << std::noboolalpha;
+			    } else if constexpr (std::is_integral<T>::value) {
+			        out << static_cast<int>(x);
+			    } else {
+			        out << x;
+			    }
+			}`
 		replacements["_format_output"] = ""
 	}
 	for k, v := range replacements {
@@ -1365,7 +1365,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "test.txt"
+	inputFilename := "./go_test_code/test2.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(versionString)
@@ -1386,7 +1386,7 @@ func main() {
 		} else if os.Args[2] == "-O" {
 			clangFormat = false
 		} else if os.Args[2] != "-o" {
-			// log.Fatal("The second argument must be -o (format sources with clang-format) or -O (don't format sources with clang-format)")
+			log.Fatal("The second argument must be -o (format sources with clang-format) or -O (don't format sources with clang-format)")
 		}
 	}
 
@@ -1449,7 +1449,7 @@ func main() {
 	if err != nil {
 		//fmt.Println("Failed to compile this with g++:")
 		fmt.Println("In")
-		fmt.Println(err)
+		// fmt.Println(err)
 
 		cppSource = `
 
@@ -1460,9 +1460,10 @@ template <typename T>
 	}` + cppSource
 
 		cppSource = `#include <bits/stdc++.h>` + cppSource
-
+		cppSource = formatting(cppSource)
 		fmt.Println(cppSource)
-		writeFile("test5_CPP_output.cpp", cppSource)
+		outputFileName := "cpp_test_output/" + strings.Split(inputFilename, "/")[2] + ".cpp"
+		writeFile(outputFileName, cppSource)
 
 		// fmt.Println("Errors:")
 		// fmt.Println(errors.String())
@@ -1482,7 +1483,7 @@ template <typename T>
 			log.Fatal(err)
 		}
 	} else {
-		//fmt.Println(cppSource)
+		fmt.Println(cppSource)
 	}
 
 }
@@ -1509,4 +1510,18 @@ func writeFile(filename, data string) error {
 	}
 
 	return nil
+}
+
+func formatting(data string) string {
+	// temporary
+	ans := data
+	ans = strings.Replace(data, "Math.Sqrt", "sqrt", -1)
+	ans = strings.Replace(ans, "float64", "double", -1)
+	ans = strings.Replace(ans, "+ =", "+=", -1)
+	ans = strings.Replace(ans, "- =", "-=", -1)
+	ans = strings.Replace(ans, "* =", "*=", -1)
+	ans = strings.Replace(ans, "/ =", "/=", -1)
+
+	return ans
+
 }
