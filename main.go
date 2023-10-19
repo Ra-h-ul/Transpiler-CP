@@ -15,216 +15,6 @@ import (
 	"github.com/Ra-hu-l/Transpiler-CP/src/utils"
 )
 
-func DeferCall(source string) string {
-	trimmed := strings.TrimSpace(utils.After("defer", source))
-
-	// This function handles three possibilities:
-	// * defer f()
-	// * defer func() { asdf }();
-	// * "defer func() {" and then later "}()"
-
-	if strings.HasPrefix(trimmed, "func() {") && strings.HasSuffix(trimmed, "}()") {
-		// Anonymous function, on one line
-		constants.DeferCounter++
-		trimmed = strings.TrimSpace(utils.LeftBetween(trimmed, "func() {", "}()"))
-		// TODO: let go2cpp() return pure source code + includes to place at the top, not just one large string
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { " + go2cpp(trimmed) + "; });"
-	} else if trimmed == "func() {" {
-		// Anonymous function, on multiple lines
-		constants.DeferCounter++
-		constants.UnfinishedDeferFunction = true // output "});" later on, when "}()" is encountered in the Go code
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { "
-	} else {
-		// Assume a regular function call
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { " + trimmed + "; });"
-	}
-}
-
-// Return transformed line and the variable names
-func VarDeclarations(source string) (string, []string) {
-
-	// TODO: This is an ugly function. Refactor.
-
-	if strings.Contains(source, "=") {
-		parts := strings.SplitN(strings.TrimSpace(source), "=", 2)
-		left := parts[0]
-		right := strings.TrimSpace(parts[1])
-		fields := strings.Split(strings.TrimSpace(left), " ")
-		if fields[0] == "var" {
-			fields = fields[1:]
-		}
-		if len(fields) == 2 {
-			return replacements.TypeReplace(fields[1]) + " " + fields[0] + " = " + right, []string{fields[0]}
-		} else if len(fields) > 2 {
-			if strings.Contains(source, ",") {
-				leftFields := strings.Fields(left)
-				if leftFields[0] == "var" {
-					leftFields = leftFields[1:]
-				}
-				rightFields := strings.Fields(right)
-				if len(leftFields)-1 != len(rightFields) {
-					panic("var declaration utils.Has mismatching number of variables and values: " + left + " VS " + right)
-				}
-				lastIndex := len(leftFields) - 1
-				varType := leftFields[lastIndex]
-				var sb strings.Builder
-				var varNames []string
-
-				for i, varName := range leftFields[:lastIndex] {
-					if i > 0 {
-						sb.WriteString(";")
-					}
-					if strings.HasSuffix(varName, ",") {
-						varName = varName[:len(varName)-1]
-					}
-					varValue := rightFields[i]
-					if strings.HasSuffix(varValue, ",") {
-						varValue = varValue[:len(varValue)-1]
-					}
-					sb.WriteString(replacements.TypeReplace(varType) + " " + varName + " = " + varValue)
-					varNames = append(varNames, varName)
-				}
-				return sb.String(), varNames
-			}
-			return replacements.TypeReplace(fields[1]) + " " + fields[0] + " " + strings.Join(fields[2:], " ") + " = " + right, []string{fields[0]}
-		}
-		leftFields := strings.Fields(left)
-		if leftFields[0] == "var" {
-			leftFields = leftFields[1:]
-		}
-		if len(leftFields) > 1 {
-			panic("unsupported var declaration: " + source)
-		}
-
-		varName := leftFields[0]
-		varType := right
-		varValue := ""
-		if strings.Contains(source, "=") {
-			varType = "auto"
-			lastIndex := len(leftFields) - 1
-			if len(leftFields) > 1 && !strings.Contains(leftFields[lastIndex], ",") {
-				varType = leftFields[lastIndex]
-				//leftFields = leftFields[:lastIndex-1]
-			}
-			varValue = right
-		}
-
-		withBracket := false
-		if strings.HasSuffix(right, "{") {
-			varType = strings.TrimSpace(right[:len(right)-1])
-			withBracket = true
-		}
-
-		varValue = strings.TrimPrefix(varValue, varType)
-
-		s := replacements.TypeReplace(varType) + " " + varName + " = " + varValue
-		if withBracket {
-			if !strings.HasSuffix(s, "{") {
-				s += "{"
-			}
-		} else {
-			if !strings.Contains(source, "`") {
-				// Only add a semicolon if it's not a multiline string and not an opening bracket
-				s += ";"
-			}
-		}
-		return s, []string{varName}
-	}
-	fields := strings.Fields(source)
-	if fields[0] == "var" {
-		fields = fields[1:]
-	}
-	if len(fields) == 2 {
-		return replacements.TypeReplace(fields[1]) + " " + fields[0], []string{fields[0]}
-	}
-	if strings.Contains(source, ",") {
-		// Comma separated variable names, with one common variable type,
-		// and no value assignment
-		lastIndex := len(fields) - 1
-		varType := fields[lastIndex]
-		var sb strings.Builder
-		var varNames []string
-
-		for i, varName := range fields[:lastIndex] {
-			if i > 0 {
-				sb.WriteString(";")
-			}
-			if strings.HasSuffix(varName, ",") {
-				varName = varName[:len(varName)-1]
-			}
-			sb.WriteString(replacements.TypeReplace(varType) + " " + varName)
-			varNames = append(varNames, varName)
-		}
-
-		return sb.String(), varNames
-	}
-
-	// Unrecognized
-	panic("Unrecognized var declaration: " + source)
-
-}
-
-// TypeDeclaration returns a transformed string (from Go to C++),
-// and a bool if a struct is opened (with {).
-func TypeDeclaration(source string) (string, bool) {
-	fields := strings.Split(strings.TrimSpace(source), " ")
-	if fields[0] == "type" {
-		fields = fields[1:]
-	}
-	left := strings.TrimSpace(fields[0])
-	right := strings.TrimSpace(fields[1])
-	words := strings.Split(left, " ")
-	if len(fields) == 2 {
-		// Type alias
-		return "using " + left + " = " + replacements.TypeReplace(right), false
-	} else if len(words) == 2 {
-		// Type alias
-		return "using " + words[1] + " " + words[0] + " = " + replacements.TypeReplace(right), false
-	} else if strings.Contains(right, "struct") {
-		// type Vec3 struct {
-		// to
-		// class Vec3 { public:
-		// also the closing bracket must end with a semicolon
-		return "class " + left + " { public:", true
-	} else if len(words) == 1 {
-		// Type alias
-		return "using " + left + " = " + replacements.TypeReplace(right), false
-	}
-	// Unrecognized
-	panic("Unrecognized type declaration: " + source)
-}
-
-func ConstDeclaration(source string) (output string) {
-	output = source
-	fields := strings.SplitN(source, "=", 2)
-	if len(fields) == 0 {
-		panic("no fields in const declaration")
-	} else if len(fields) == 1 {
-		// This happens if there is only a constant name, with no value assigned
-		// Only simple iota incrementation is supported so far (not .. << ..)
-		constants.IotaNumber++
-		return "const auto " + strings.TrimSpace(fields[0]) + " = " + strconv.Itoa(constants.IotaNumber)
-	}
-	left := strings.TrimSpace(fields[0])
-	right := strings.TrimSpace(fields[1])
-	words := strings.Split(left, " ")
-	if right == "iota" {
-		constants.IotaNumber = 0
-		right = strconv.Itoa(constants.IotaNumber)
-	}
-	if len(words) == 1 {
-		// No type
-		return "const auto " + left + " = " + right
-	} else if len(words) == 2 {
-		if words[0] == "const" {
-			return "const auto " + words[1] + " = " + right
-		}
-		return "const " + replacements.TypeReplace(words[1]) + " " + words[0] + " = " + right
-	}
-	// Unrecognized
-	panic("go2cpp: unrecognized const expression: " + source)
-}
-
 func go2cpp(source string) string {
 	functionVarMap := map[string]string{} // variable names encountered in the function so far, and their corresponding smart names
 	inMultilineString := false
@@ -288,7 +78,7 @@ func go2cpp(source string) string {
 			newLine = trimmedLine + ";"
 		} else if inVar || (inStruct && trimmedLine != "}") {
 			var varNames []string
-			newLine, varNames = VarDeclarations(trimmedLine)
+			newLine, varNames = utils.VarDeclarations(trimmedLine)
 			if strings.HasSuffix(newLine, "{") {
 				closingBracketNeedsASemicolon = true
 			}
@@ -299,13 +89,13 @@ func go2cpp(source string) string {
 			}
 		} else if inType {
 			prevInStruct := inStruct
-			newLine, inStruct = TypeDeclaration(trimmedLine)
+			newLine, inStruct = utils.TypeDeclaration(trimmedLine)
 			if !prevInStruct && inStruct {
 				// Entering struct, reset the slice that is used to gather variable names
 				encounteredStructNames = []string{}
 			}
 		} else if inConst {
-			newLine = ConstDeclaration(line)
+			newLine = utils.ConstDeclaration(line)
 		} else if inHashMap && !inMultilineString {
 			newLine = replacements.HashElements(trimmedLine, hashKeyType, false)
 		} else if strings.HasPrefix(trimmedLine, "func") {
@@ -428,8 +218,8 @@ func go2cpp(source string) string {
 				inImport = false
 			}
 			continue
-		} else if strings.HasPrefix(trimmedLine, "defer ") {
-			newLine = DeferCall(line)
+			// } else if strings.HasPrefix(trimmedLine, "defer ") {
+			// 	newLine = DeferCall(line)
 		} else if strings.HasPrefix(trimmedLine, "if ") {
 			newLine = utils.IfSentence(line)
 			// TODO: Short variable names utils.Has the potential to ruin if expressions this way, do a smarter replacement
@@ -450,14 +240,14 @@ func go2cpp(source string) string {
 			continue
 		} else if strings.HasPrefix(trimmedLine, "var ") {
 			// Ignore variable name since it's not in a struct
-			newLine, _ = VarDeclarations(line)
+			newLine, _ = utils.VarDeclarations(line)
 			if strings.HasSuffix(newLine, "{") {
 				closingBracketNeedsASemicolon = true
 			}
 		} else if strings.HasPrefix(trimmedLine, "type ") {
-			newLine, inStruct = TypeDeclaration(trimmedLine)
+			newLine, inStruct = utils.TypeDeclaration(trimmedLine)
 		} else if strings.HasPrefix(trimmedLine, "const ") {
-			newLine = ConstDeclaration(trimmedLine)
+			newLine = utils.ConstDeclaration(trimmedLine)
 		} else if trimmedLine == "fallthrough" {
 			newLine = "goto " + utils.LabelName() + "; // fallthrough"
 			constants.SwitchLabel = utils.LabelName()
@@ -541,29 +331,6 @@ func main() {
 	clangFormat := true
 
 	inputFilename := "./go_test_code/test2.txt"
-	if len(os.Args) > 1 {
-		if os.Args[1] == "--version" {
-			fmt.Println(constants.VersionString)
-			return
-		} else if os.Args[1] == "--help" {
-			fmt.Println("supported arguments:")
-			fmt.Println(" a .go file as the first argument")
-			fmt.Println("supported options:")
-			fmt.Println(" -o : Format with clang format")
-			fmt.Println(" -O : Don't format with clang format")
-			return
-		}
-		inputFilename = os.Args[1]
-	}
-	if len(os.Args) > 2 {
-		if os.Args[2] == "-o" {
-			clangFormat = true
-		} else if os.Args[2] == "-O" {
-			clangFormat = false
-		} else if os.Args[2] != "-o" {
-			log.Fatal("The second argument must be -o (format sources with clang-format) or -O (don't format sources with clang-format)")
-		}
-	}
 
 	var sourceData []byte
 	var err error
@@ -622,9 +389,6 @@ func main() {
 	cmd2.Stderr = &errors
 	err = cmd2.Run()
 	if err != nil {
-		//fmt.Println("Failed to compile this with g++:")
-		fmt.Println("In")
-		// fmt.Println(err)
 
 		cppSource = `
 
@@ -661,15 +425,6 @@ template <typename T>
 		fmt.Println(cppSource)
 	}
 
-}
-
-func containsSubstring(str, substr string) bool {
-	for i := 0; i < len(str)-len(substr)+1; i++ {
-		if str[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func writeFile(filename, data string) error {
