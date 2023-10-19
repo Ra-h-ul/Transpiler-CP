@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/Ra-hu-l/Transpiler-CP/src/utils"
 )
 
 const cppHasStdFormat = false
@@ -73,79 +75,9 @@ var (
 	unfinishedDeferFunction bool
 )
 
-// between returns the string between two given strings, or the original string
-// firstA specifies if the first or last instance of a should be used
-// firstB specifies if the first or last instance of b should be used
-func between(s, a, b string, lastA, lastB bool) string {
-	var apos int
-	if lastA {
-		apos = strings.LastIndex(s, a)
-	} else {
-		apos = strings.Index(s, a)
-	}
-	if apos == -1 {
-		return s
-	}
-	var bpos int
-	if lastB {
-		bpos = strings.LastIndex(s, b)
-	} else {
-		bpos = strings.Index(s, b)
-	}
-	if bpos == -1 {
-		return s
-	}
-	if bpos < apos {
-		return s[bpos+len(b) : apos]
-	}
-	return s[apos+len(a) : bpos]
-}
-
-// leftBetween searches from the left and returns the first string that is
-// between a and b.
-func leftBetween(s, a, b string) string {
-	return between(s, a, b, false, false)
-}
-
-// like leftBetween, but use the rightmost instance of b
-func leftBetweenRightmost(s, a, b string) string {
-	return between(s, a, b, false, true)
-}
-
-// greedyBetween searches from the left for a then
-// searches as far as possible for b, before returning
-// the string that is between a and b.
-func greedyBetween(s, a, b string) string {
-	return between(s, a, b, false, true)
-}
-
 // TODO: Make more robust, this easily breaks
 func LiteralStrings(source string) string {
-
-	// Temporary
 	return source
-
-	//output := source
-	//replacements := map[string]string{
-	//	"\")":  "\"s)",
-	//	"\";":  "\"s;",
-	//	"\",":  "\"s,",
-	//	"\"}":  "\"s}",
-	//	"\" }": "\"s }",
-	//	"\" )": "\"s )",
-	//	"\":":  "\"s:",
-	//}
-	//hasLiteral := false
-	//for k, v := range replacements {
-	//	if strings.Contains(output, k) {
-	//		output = strings.Replace(output, k, v, -1)
-	//		hasLiteral = true
-	//	}
-	//}
-	//if hasLiteral {
-	//	output = "\nusing namespace std::string_literals;\n" + output
-	//}
-	//return output
 }
 
 // TODO: Avoid whole-program replacements, if possible
@@ -340,7 +272,7 @@ func FunctionRetvals(source string) (output string) {
 	}
 	output = source
 	if strings.Contains(output, "(") {
-		s := greedyBetween(output, "(", ")")
+		s := utils.GreedyBetween(output, "(", ")")
 		retvals := FunctionArguments(s)
 		if strings.Contains(retvals, ",") {
 			output = "(" + retvals + ")"
@@ -353,7 +285,7 @@ func FunctionRetvals(source string) (output string) {
 
 // CPPTypes picks out the types given a list of C++ arguments with name and type
 func CPPTypes(args string) string {
-	words := strings.Split(leftBetween(args, "(", ")"), ",")
+	words := strings.Split(utils.LeftBetween(args, "(", ")"), ",")
 	var atypes []string
 	for _, word := range words {
 		elems := strings.Split(strings.TrimSpace(word), " ")
@@ -370,21 +302,21 @@ func FunctionSignature(source string) (output, returntype, name string) {
 		return source, "", ""
 	}
 	output = source
-	args := FunctionArguments(leftBetween(output, "(", ")"))
+	args := FunctionArguments(utils.LeftBetween(output, "(", ")"))
 	// Has return values in a parenthesis
 	var rets string
 	if strings.Contains(output, ") (") {
 		// There is a parenthesis with return types in the function signature
-		rets = FunctionRetvals(between(output, ")", "{", false, true))
+		rets = FunctionRetvals(utils.Between(output, ")", "{", false, true))
 	} else {
 		// There is not a parenthesis with return types in the function signature
-		rets = FunctionRetvals(between(output, ")", "{", true, true))
+		rets = FunctionRetvals(utils.Between(output, ")", "{", true, true))
 	}
 	if strings.Contains(rets, ",") {
 		// Multiple return
 		rets = tupleType + "<" + CPPTypes(rets) + ">"
 	}
-	name = leftBetween(output, "func ", "(")
+	name = utils.LeftBetween(output, "func ", "(")
 	if name == "main" {
 		rets = "int"
 	}
@@ -447,7 +379,7 @@ func stripSingleLineComment(line string) string {
 func PrintStatement(source string) (string, bool) {
 
 	// Pick out and trim all arguments given to the print functon
-	args := SplitArgs(greedyBetween(strings.TrimSpace(source), "(", ")"))
+	args := SplitArgs(utils.GreedyBetween(strings.TrimSpace(source), "(", ")"))
 
 	// Identify the print function
 	if !strings.Contains(source, "(") {
@@ -625,7 +557,7 @@ func DeferCall(source string) string {
 	if strings.HasPrefix(trimmed, "func() {") && strings.HasSuffix(trimmed, "}()") {
 		// Anonymous function, on one line
 		deferCounter++
-		trimmed = strings.TrimSpace(leftBetween(trimmed, "func() {", "}()"))
+		trimmed = strings.TrimSpace(utils.LeftBetween(trimmed, "func() {", "}()"))
 		// TODO: let go2cpp() return pure source code + includes to place at the top, not just one large string
 		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(deferCounter) + "(nullptr, [](...) { " + go2cpp(trimmed) + "; });"
 	} else if trimmed == "func() {" {
@@ -641,13 +573,13 @@ func DeferCall(source string) string {
 
 func IfSentence(source string) (output string) {
 	output = source
-	expression := strings.TrimSpace(leftBetweenRightmost(source, "if", "{"))
+	expression := strings.TrimSpace(utils.LeftBetweenRightmost(source, "if", "{"))
 	return "if (" + expression + ") {"
 }
 
 func ElseIfSentence(source string) (output string) {
 	output = source
-	expression := strings.TrimSpace(leftBetweenRightmost(source, "} else if", "{"))
+	expression := strings.TrimSpace(utils.LeftBetweenRightmost(source, "} else if", "{"))
 	return "} else if (" + expression + ") {"
 }
 
@@ -697,7 +629,7 @@ func TypeReplace(source string) string {
 }
 
 func ForLoop(source string, encounteredHashMaps []string) string {
-	expression := strings.TrimSpace(leftBetween(source, "for", "{"))
+	expression := strings.TrimSpace(utils.LeftBetween(source, "for", "{"))
 	if expression == "" {
 		// endless loop
 		return "for (;;) {"
@@ -757,7 +689,7 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 	if strings.Contains(expression, ":=") {
 		if strings.HasPrefix(expression, "_,") && strings.Contains(expression, "range") {
 			// For each, no index
-			varname := leftBetween(expression, ",", ":")
+			varname := utils.LeftBetween(expression, ",", ":")
 			fields := strings.SplitN(expression, "range ", 2)
 			listname := fields[1]
 			// C++11 and later for each loop
@@ -789,7 +721,7 @@ func Switch(source string) (output string) {
 
 func Case(source string) (output string) {
 	output = source
-	s := leftBetween(output, " ", ":")
+	s := utils.LeftBetween(output, " ", ":")
 	if firstCase {
 		firstCase = false
 		output = "if ("
@@ -1208,15 +1140,15 @@ func go2cpp(source string) string {
 						//newLine = line
 
 					}
-					theType := TypeReplace(leftBetween(right, "]", "{"))
+					theType := TypeReplace(utils.LeftBetween(right, "]", "{"))
 					fields := strings.SplitN(right, "{", 2)
 					newLine = theType + " " + strings.TrimSpace(left) + "[] {" + fields[1]
 				} else if strings.HasPrefix(right, "map[") {
 					hashName := strings.TrimSpace(left)
 					encounteredHashMaps = append(encounteredHashMaps, hashName)
 
-					keyType := TypeReplace(leftBetween(right, "map[", "]"))
-					valueType := TypeReplace(leftBetween(right, "]", "{"))
+					keyType := TypeReplace(utils.LeftBetween(right, "map[", "]"))
+					valueType := TypeReplace(utils.LeftBetween(right, "]", "{"))
 
 					closingBracket := strings.HasSuffix(strings.TrimSpace(right), "}")
 					if !closingBracket {
@@ -1224,7 +1156,7 @@ func go2cpp(source string) string {
 						hashKeyType = keyType
 						newLine = "std::unordered_map<" + keyType + ", " + valueType + "> " + hashName + " {"
 					} else {
-						elements := leftBetween(right, "{", "}")
+						elements := utils.LeftBetween(right, "{", "}")
 						newLine = "std::unordered_map<" + keyType + ", " + valueType + "> " + hashName + " " + HashElements(elements, keyType, false)
 					}
 				} else {
@@ -1365,7 +1297,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "./go_test_code/test2.txt"
+	inputFilename := "./go_test_code/test3.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(versionString)
