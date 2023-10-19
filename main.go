@@ -40,79 +40,6 @@ func DeferCall(source string) string {
 	}
 }
 
-func ForLoop(source string, encounteredHashMaps []string) string {
-	expression := strings.TrimSpace(utils.LeftBetween(source, "for", "{"))
-	if expression == "" {
-		// endless loop
-		return "for (;;) {"
-	}
-	// for range, with no comma
-	if strings.Count(expression, ",") == 0 && strings.Contains(expression, "range") {
-		fields := strings.Split(expression, " ")
-		varName := fields[0]
-		listName := fields[len(fields)-1]
-
-		// for i := range l {
-		// -->
-		// for (auto i = 0; i < std::size(l); i++) {
-
-		hashMapName := listName
-		if utils.Has(encounteredHashMaps, hashMapName) {
-			// looping over the key of a hash map, not over the index of a list
-			return "for (const auto & [" + varName + ", " + varName + "__" + "] : " + hashMapName + ") {"
-		} else if varName == "_" {
-			return "for (const auto & [" + varName + "__" + ", " + varName + "___" + "] : " + hashMapName + ") {"
-		} else {
-			// looping over the index of a list
-			return "for (std::size_t " + varName + " = 0; " + varName + " < std::size(" + listName + "); " + varName + "++) {"
-		}
-	}
-	// for range, over index and element, or key and value
-	if strings.Count(expression, ",") == 1 && strings.Contains(expression, "range") && strings.Contains(expression, ":=") {
-		fields := strings.Split(expression, ":=")
-		varnames := strings.Split(fields[0], ",")
-
-		indexvar := varnames[0]
-		elemvar := varnames[1]
-
-		fields = strings.Split(expression, " ")
-		listName := fields[len(fields)-1]
-		hashMapName := listName
-
-		if utils.Has(encounteredHashMaps, hashMapName) {
-			if indexvar == "_" {
-				// looping over the values of a hash map
-				hashMapHashKey := hashMapName + constants.HashMapSuffix
-				return "for (const auto & " + hashMapHashKey + " : " + hashMapName + ") {" + "\n" + "auto " + elemvar + " = " + hashMapHashKey + ".second"
-			}
-			// for k, v := range m
-			keyvar := indexvar
-			//hashMapHashKey := keyvar + hashMapSuffix + keysSuffix
-			return "for (const auto & [" + keyvar + ", " + elemvar + "] : " + hashMapName + ") {"
-			//return "for (auto " + hashMapHashKey + " : " + hashMapName + keysSuffix + ") {" + "\n" + "auto " + keyvar + " = " + hashMapHashKey + ".second;\nauto " + elemvar + " = " + hashMapName + ".at(" + hashMapHashKey + ".first)"
-		}
-
-		if indexvar == "_" {
-			return "for (auto " + elemvar + " : " + listName + ") {"
-		}
-		return "for (std::size_t " + indexvar + " = 0; " + indexvar + " < std::size(" + listName + "); " + indexvar + "++) {" + "\n" + "auto " + elemvar + " = " + listName + "[" + indexvar + "]"
-	}
-	// not "for" + "range"
-	if strings.Contains(expression, ":=") {
-		if strings.HasPrefix(expression, "_,") && strings.Contains(expression, "range") {
-			// For each, no index
-			varname := utils.LeftBetween(expression, ",", ":")
-			fields := strings.SplitN(expression, "range ", 2)
-			listname := fields[1]
-			// C++11 and later for each loop
-			expression = "auto &" + varname + " : " + listname
-		} else {
-			expression = "auto " + strings.Replace(expression, ":=", "=", 1)
-		}
-	}
-	return "for (" + expression + ") {"
-}
-
 // Return transformed line and the variable names
 func VarDeclarations(source string) (string, []string) {
 
@@ -298,47 +225,6 @@ func ConstDeclaration(source string) (output string) {
 	panic("go2cpp: unrecognized const expression: " + source)
 }
 
-// HashElements transforms the contents of a map in Go to the contents of an unordered_map in C++
-// keyType is the type of the key, in C++, for instance "std::string"
-// if keyForBoth is true, a hash(key)->key map is created,
-// if not, a hash(key)->value map is created.
-// This will not work for multiline hash map initializations.
-// TODO: Handle keys and values that look like this: "\": \"" (containing quotes, a colon and a space)
-func HashElements(source, keyType string, keyForBoth bool) string {
-	// Check if the given source line contains either a separating or a trailing comma
-	if !strings.Contains(source, ",") {
-		return source
-	}
-	// Check if there is only one pair
-	if strings.Count(source, ": ") == 1 {
-		pairElements := strings.SplitN(source, ": ", 2)
-		if len(pairElements) != 2 {
-			panic("This should be two elements, separated by a colon and a space " + source)
-		}
-		return "{ " + strings.TrimSpace(pairElements[0]) + ", " + strings.TrimSpace(pairElements[1]) + " }, "
-	}
-	// Multiple pairs
-	pairs := strings.Split(source, ",")
-	output := "{"
-	first := true
-	for _, pair := range pairs {
-		if !first {
-			output += ","
-		} else {
-			first = false
-		}
-		pairElements := strings.SplitN(pair, ": ", 2)
-		//fmt.Println("HASH ELEMENTS", source)
-		//fmt.Println("HASH ELEMENTS", pairs)
-		if len(pairElements) != 2 {
-			panic("This should be two elements, separated by a colon and a space: " + pair)
-		}
-		output += "{ " + strings.TrimSpace(pairElements[0]) + ", " + strings.TrimSpace(pairElements[1]) + " }"
-	}
-
-	return output + "}"
-}
-
 func go2cpp(source string) string {
 	functionVarMap := map[string]string{} // variable names encountered in the function so far, and their corresponding smart names
 	inMultilineString := false
@@ -421,12 +307,12 @@ func go2cpp(source string) string {
 		} else if inConst {
 			newLine = ConstDeclaration(line)
 		} else if inHashMap && !inMultilineString {
-			newLine = HashElements(trimmedLine, hashKeyType, false)
+			newLine = replacements.HashElements(trimmedLine, hashKeyType, false)
 		} else if strings.HasPrefix(trimmedLine, "func") {
 			functionVarMap = map[string]string{}
 			newLine, currentReturnType, currentFunctionName = utils.FunctionSignature(trimmedLine)
 		} else if strings.HasPrefix(trimmedLine, "for") {
-			newLine = ForLoop(line, encounteredHashMaps)
+			newLine = utils.ForLoop(line, encounteredHashMaps)
 		} else if strings.HasPrefix(trimmedLine, "switch") {
 			newLine = utils.Switch(line)
 		} else if strings.HasPrefix(trimmedLine, "case") {
@@ -515,7 +401,7 @@ func go2cpp(source string) string {
 						newLine = "std::unordered_map<" + keyType + ", " + valueType + "> " + hashName + " {"
 					} else {
 						elements := utils.LeftBetween(right, "{", "}")
-						newLine = "std::unordered_map<" + keyType + ", " + valueType + "> " + hashName + " " + HashElements(elements, keyType, false)
+						newLine = "std::unordered_map<" + keyType + ", " + valueType + "> " + hashName + " " + replacements.HashElements(elements, keyType, false)
 					}
 				} else {
 					varName := strings.TrimSpace(left)

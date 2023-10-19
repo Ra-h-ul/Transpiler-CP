@@ -72,3 +72,44 @@ func TypeReplace(source string) string {
 		return trimmed
 	}
 }
+
+// HashElements transforms the contents of a map in Go to the contents of an unordered_map in C++
+// keyType is the type of the key, in C++, for instance "std::string"
+// if keyForBoth is true, a hash(key)->key map is created,
+// if not, a hash(key)->value map is created.
+// This will not work for multiline hash map initializations.
+// TODO: Handle keys and values that look like this: "\": \"" (containing quotes, a colon and a space)
+func HashElements(source, keyType string, keyForBoth bool) string {
+	// Check if the given source line contains either a separating or a trailing comma
+	if !strings.Contains(source, ",") {
+		return source
+	}
+	// Check if there is only one pair
+	if strings.Count(source, ": ") == 1 {
+		pairElements := strings.SplitN(source, ": ", 2)
+		if len(pairElements) != 2 {
+			panic("This should be two elements, separated by a colon and a space " + source)
+		}
+		return "{ " + strings.TrimSpace(pairElements[0]) + ", " + strings.TrimSpace(pairElements[1]) + " }, "
+	}
+	// Multiple pairs
+	pairs := strings.Split(source, ",")
+	output := "{"
+	first := true
+	for _, pair := range pairs {
+		if !first {
+			output += ","
+		} else {
+			first = false
+		}
+		pairElements := strings.SplitN(pair, ": ", 2)
+		//fmt.Println("HASH ELEMENTS", source)
+		//fmt.Println("HASH ELEMENTS", pairs)
+		if len(pairElements) != 2 {
+			panic("This should be two elements, separated by a colon and a space: " + pair)
+		}
+		output += "{ " + strings.TrimSpace(pairElements[0]) + ", " + strings.TrimSpace(pairElements[1]) + " }"
+	}
+
+	return output + "}"
+}
