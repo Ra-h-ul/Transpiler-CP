@@ -1,3 +1,3 @@
-module github.com/xyproto/go2cpp
+module github.com/Ra-hu-l/Transpiler-CP
 
-go 1.10
+go 1.20

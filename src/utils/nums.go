@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"strconv"
@@ -14,7 +14,7 @@ func isNum(s string) bool {
 }
 
 // pick out the number at the end of a string, or 0 if there is none
-func trailingNumber(s string) int {
+func TrailingNumber(s string) int {
 	runes := []rune(s)
 	lastIndex := len(runes) - 1
 	var num string
