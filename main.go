@@ -1460,7 +1460,7 @@ template <typename T>
 	}` + cppSource
 
 		cppSource = `#include <bits/stdc++.h>` + cppSource
-		cppSource = formatting(cppSource)
+
 		fmt.Println(cppSource)
 		writeFile("test5_CPP_output.cpp", cppSource)
 
@@ -1494,20 +1494,6 @@ func containsSubstring(str, substr string) bool {
 		}
 	}
 	return false
-}
-
-func formatting(data string) string {
-	// temporary
-	ans := data
-	ans = strings.Replace(data, "Math.Sqrt", "sqrt", -1)
-	ans = strings.Replace(ans, "float64", "double", -1)
-	ans = strings.Replace(ans, "+ =", "+=", -1)
-	ans = strings.Replace(ans, "- =", "-=", -1)
-	ans = strings.Replace(ans, "* =", "*=", -1)
-	ans = strings.Replace(ans, "/ =", "/=", -1)
-
-	return ans
-
 }
 
 func writeFile(filename, data string) error {
