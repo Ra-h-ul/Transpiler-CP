@@ -10,169 +10,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Ra-hu-l/Transpiler-CP/src/constants"
 	"github.com/Ra-hu-l/Transpiler-CP/src/replacements"
 	"github.com/Ra-hu-l/Transpiler-CP/src/utils"
 )
-
-const cppHasStdFormat = false
-
-const versionString = "go transpiler"
-
-const tupleType = "std::tuple"
-
-const (
-	hashMapSuffix = "_h__"
-	keysSuffix    = "_k__"
-	switchPrefix  = "_s__"
-	labelPrefix   = "_l__"
-	deferPrefix   = "_d__"
-)
-
-var includeMap = map[string]string{
-	"std::tuple":                       "",
-	"std::endl":                        "",
-	"std::cout":                        "",
-	"std::string":                      "",
-	"std::size":                        "",
-	"std::unordered_map":               "",
-	"std::hash":                        "",
-	"std::size_t":                      "",
-	"std::int8_t":                      "",
-	"std::int16_t":                     "",
-	"std::int32_t":                     "",
-	"std::int64_t":                     "",
-	"std::uint8_t":                     "",
-	"std::uint16_t":                    "",
-	"std::uint32_t":                    "",
-	"std::uint64_t":                    "",
-	"printf":                           "",
-	"fprintf":                          "",
-	"sprintf":                          "",
-	"snprintf":                         "",
-	"std::stringstream":                "",
-	"std::is_pointer":                  "",
-	"std::experimental::is_detected_v": "",
-	"std::shared_ptr":                  "",
-	"std::nullopt":                     "",
-	"EXIT_SUCCESS":                     "",
-	"EXIT_FAILURE":                     "",
-	"std::vector":                      "",
-	"std::unique_ptr":                  "",
-	"std::runtime_error":               "",
-	"std::regex_replace":               "",
-	"std::regex_constants":             "",
-	"std::to_string":                   "",
-}
-
-var endings = []string{"{", ",", "}", ":"}
-
-var (
-	switchExpressionCounter = -1
-	firstCase               bool
-	switchLabel             string
-	labelCounter            int
-	iotaNumber              int // used for simple increases of iota constants
-	deferCounter            int
-	unfinishedDeferFunction bool
-)
-
-// CPPTypes picks out the types given a list of C++ arguments with name and type
-func CPPTypes(args string) string {
-	words := strings.Split(utils.LeftBetween(args, "(", ")"), ",")
-	var atypes []string
-	for _, word := range words {
-		elems := strings.Split(strings.TrimSpace(word), " ")
-		t := replacements.TypeReplace(elems[0])
-		atypes = append(atypes, t)
-	}
-	return strings.Join(atypes, ", ")
-}
-
-// FunctionSignature transforms a function signature that spans one line
-// Will change the "func main" signature to a main function that returns an int.
-func FunctionSignature(source string) (output, returntype, name string) {
-	if len(strings.TrimSpace(source)) == 0 {
-		return source, "", ""
-	}
-	output = source
-	args := utils.FunctionArguments(utils.LeftBetween(output, "(", ")"))
-	// Has return values in a parenthesis
-	var rets string
-	if strings.Contains(output, ") (") {
-		// There is a parenthesis with return types in the function signature
-		rets = utils.FunctionRetvals(utils.Between(output, ")", "{", false, true))
-	} else {
-		// There is not a parenthesis with return types in the function signature
-		rets = utils.FunctionRetvals(utils.Between(output, ")", "{", true, true))
-	}
-	if strings.Contains(rets, ",") {
-		// Multiple return
-		rets = tupleType + "<" + CPPTypes(rets) + ">"
-	}
-	name = utils.LeftBetween(output, "func ", "(")
-	if name == "main" {
-		rets = "int"
-	}
-	if len(strings.TrimSpace(rets)) == 0 {
-		rets = "void"
-	}
-	output = "auto " + name + "(" + args + ") -> " + rets + " {"
-	return strings.TrimSpace(output), rets, name
-}
-
-// Split arguments. Handles quoting 1 level deep.
-func SplitArgs(s string) []string {
-	inQuote := false
-	inSingleQuote := false
-	inPar := false
-	inCurly := false
-	var args []string
-	word := ""
-	for _, letter := range s {
-		switch letter {
-		case '"':
-			inQuote = !inQuote
-		case '\'':
-			inSingleQuote = !inSingleQuote
-		}
-		if letter == '(' && !inQuote && !inSingleQuote && !inPar && !inCurly {
-			inPar = true
-		}
-		if letter == ')' && !inQuote && !inSingleQuote {
-			inPar = false
-		}
-		if letter == '{' && !inQuote && !inSingleQuote && !inPar && !inCurly {
-			inCurly = true
-		}
-		if letter == '}' && !inQuote && !inSingleQuote {
-			inCurly = false
-		}
-		if letter == ',' && !inQuote && !inSingleQuote && !inPar && !inCurly {
-			args = append(args, strings.TrimSpace(word))
-			word = ""
-		} else {
-			word += string(letter)
-		}
-	}
-	args = append(args, strings.TrimSpace(word))
-	return args
-}
-
-// stripSingleLineComment will strip away trailing single-line comments
-func stripSingleLineComment(line string) string {
-	commentMarker := "//"
-	if strings.Count(line, commentMarker) == 1 {
-		p := strings.Index(line, commentMarker)
-		return strings.TrimSpace(line[:p])
-	}
-	return line
-}
 
 // Will return the transformed string, and a bool if pretty printing may be needed
 func PrintStatement(source string) (string, bool) {
 
 	// Pick out and trim all arguments given to the print functon
-	args := SplitArgs(utils.GreedyBetween(strings.TrimSpace(source), "(", ")"))
+	args := utils.SplitArgs(utils.GreedyBetween(strings.TrimSpace(source), "(", ")"))
 
 	// Identify the print function
 	if !strings.Contains(source, "(") {
@@ -273,7 +120,7 @@ func PrintStatement(source string) (string, bool) {
 	// Several arguments given
 	//fmt.Println("SEVERAL ARGUMENTS", args)
 
-	// HINT: Almost everything should start with "pipe" and almost nothing should end with "pipe"
+	// Almost everything should start with "pipe" and almost nothing should end with "pipe"
 	output := outputName
 	lastIndex := len(args) - 1
 	for i, arg := range args {
@@ -308,7 +155,7 @@ func AddIncludes(source string) (output string) {
 	output = source
 
 	includeString := ""
-	for k, v := range includeMap {
+	for k, v := range constants.IncludeMap {
 		if strings.Contains(output, k) {
 			newInclude := "" + v + ""
 			if !strings.Contains(includeString, newInclude) {
@@ -317,7 +164,7 @@ func AddIncludes(source string) (output string) {
 
 		}
 	}
-	if cppHasStdFormat {
+	if constants.CppHasStdFormat {
 		//"std::format":                      "format",
 		k := "std::format"
 		v := "format"
@@ -349,18 +196,18 @@ func DeferCall(source string) string {
 
 	if strings.HasPrefix(trimmed, "func() {") && strings.HasSuffix(trimmed, "}()") {
 		// Anonymous function, on one line
-		deferCounter++
+		constants.DeferCounter++
 		trimmed = strings.TrimSpace(utils.LeftBetween(trimmed, "func() {", "}()"))
 		// TODO: let go2cpp() return pure source code + includes to place at the top, not just one large string
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(deferCounter) + "(nullptr, [](...) { " + go2cpp(trimmed) + "; });"
+		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { " + go2cpp(trimmed) + "; });"
 	} else if trimmed == "func() {" {
 		// Anonymous function, on multiple lines
-		deferCounter++
-		unfinishedDeferFunction = true // output "});" later on, when "}()" is encountered in the Go code
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(deferCounter) + "(nullptr, [](...) { "
+		constants.DeferCounter++
+		constants.UnfinishedDeferFunction = true // output "});" later on, when "}()" is encountered in the Go code
+		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { "
 	} else {
 		// Assume a regular function call
-		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(deferCounter) + "(nullptr, [](...) { " + trimmed + "; });"
+		return "// " + trimmed + "\nstd::shared_ptr<void> _defer" + strconv.Itoa(constants.DeferCounter) + "(nullptr, [](...) { " + trimmed + "; });"
 	}
 }
 
@@ -418,7 +265,7 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 		if has(encounteredHashMaps, hashMapName) {
 			if indexvar == "_" {
 				// looping over the values of a hash map
-				hashMapHashKey := hashMapName + hashMapSuffix
+				hashMapHashKey := hashMapName + constants.HashMapSuffix
 				return "for (const auto & " + hashMapHashKey + " : " + hashMapName + ") {" + "\n" + "auto " + elemvar + " = " + hashMapHashKey + ".second"
 			}
 			// for k, v := range m
@@ -450,11 +297,11 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 }
 
 func SwitchExpressionVariable() string {
-	return switchPrefix + strconv.Itoa(switchExpressionCounter)
+	return constants.SwitchPrefix + strconv.Itoa(constants.SwitchExpressionCounter)
 }
 
 func LabelName() string {
-	return labelPrefix + strconv.Itoa(labelCounter)
+	return constants.LabelPrefix + strconv.Itoa(constants.LabelCounter)
 }
 
 func Switch(source string) (output string) {
@@ -462,24 +309,24 @@ func Switch(source string) (output string) {
 	if strings.HasSuffix(output, "{") {
 		output = strings.TrimSpace(output[:len(output)-1])
 	}
-	switchExpressionCounter++
-	firstCase = true
+	constants.SwitchExpressionCounter++
+	constants.FirstCase = true
 	return "auto&& " + SwitchExpressionVariable() + " = " + output + "; // switch on " + output
 }
 
 func Case(source string) (output string) {
 	output = source
 	s := utils.LeftBetween(output, " ", ":")
-	if firstCase {
-		firstCase = false
+	if constants.FirstCase {
+		constants.FirstCase = false
 		output = "if ("
 	} else {
 		output = "} else if ("
 	}
 	output += SwitchExpressionVariable() + " == " + s + ") { // case " + s
-	if switchLabel != "" {
-		output += "\n" + switchLabel + ":"
-		switchLabel = ""
+	if constants.SwitchLabel != "" {
+		output += "\n" + constants.SwitchLabel + ":"
+		constants.SwitchLabel = ""
 	}
 	return output
 }
@@ -646,15 +493,15 @@ func ConstDeclaration(source string) (output string) {
 	} else if len(fields) == 1 {
 		// This happens if there is only a constant name, with no value assigned
 		// Only simple iota incrementation is supported so far (not .. << ..)
-		iotaNumber++
-		return "const auto " + strings.TrimSpace(fields[0]) + " = " + strconv.Itoa(iotaNumber)
+		constants.IotaNumber++
+		return "const auto " + strings.TrimSpace(fields[0]) + " = " + strconv.Itoa(constants.IotaNumber)
 	}
 	left := strings.TrimSpace(fields[0])
 	right := strings.TrimSpace(fields[1])
 	words := strings.Split(left, " ")
 	if right == "iota" {
-		iotaNumber = 0
-		right = strconv.Itoa(iotaNumber)
+		constants.IotaNumber = 0
+		right = strconv.Itoa(constants.IotaNumber)
 	}
 	if len(words) == 1 {
 		// No type
@@ -758,7 +605,7 @@ func go2cpp(source string) string {
 
 		newLine := line
 
-		trimmedLine := stripSingleLineComment(strings.TrimSpace(line))
+		trimmedLine := replacements.StripSingleLineComment(strings.TrimSpace(line))
 
 		if strings.HasPrefix(trimmedLine, "//") {
 			lines = append(lines, trimmedLine)
@@ -814,7 +661,7 @@ func go2cpp(source string) string {
 			newLine = HashElements(trimmedLine, hashKeyType, false)
 		} else if strings.HasPrefix(trimmedLine, "func") {
 			functionVarMap = map[string]string{}
-			newLine, currentReturnType, currentFunctionName = FunctionSignature(trimmedLine)
+			newLine, currentReturnType, currentFunctionName = utils.FunctionSignature(trimmedLine)
 		} else if strings.HasPrefix(trimmedLine, "for") {
 			newLine = ForLoop(line, encounteredHashMaps)
 		} else if strings.HasPrefix(trimmedLine, "switch") {
@@ -822,7 +669,7 @@ func go2cpp(source string) string {
 		} else if strings.HasPrefix(trimmedLine, "case") {
 			newLine = Case(line)
 		} else if strings.HasPrefix(trimmedLine, "return") {
-			if strings.HasPrefix(currentReturnType, tupleType) {
+			if strings.HasPrefix(currentReturnType, constants.TupleType) {
 				elems := strings.SplitN(newLine, "return ", 2)
 				newLine = "return " + currentReturnType + "{" + elems[1] + "};"
 				//} else {
@@ -964,20 +811,20 @@ func go2cpp(source string) string {
 			newLine = ConstDeclaration(trimmedLine)
 		} else if trimmedLine == "fallthrough" {
 			newLine = "goto " + LabelName() + "; // fallthrough"
-			switchLabel = LabelName()
-			labelCounter++
-		} else if unfinishedDeferFunction && trimmedLine == "}()" {
-			unfinishedDeferFunction = false
+			constants.SwitchLabel = LabelName()
+			constants.LabelCounter++
+		} else if constants.UnfinishedDeferFunction && trimmedLine == "}()" {
+			constants.UnfinishedDeferFunction = false
 			newLine = "});"
 		} else if trimmedLine == "default:" {
 			newLine = "} else { // default case"
-			if switchLabel != "" {
-				newLine += "\n" + switchLabel + ":"
-				switchLabel = ""
+			if constants.SwitchLabel != "" {
+				newLine += "\n" + constants.SwitchLabel + ":"
+				constants.SwitchLabel = ""
 			}
 		}
 
-		if cppHasStdFormat {
+		if constants.CppHasStdFormat {
 			// Special case for fmt.Sprintf -> std::format
 			if strings.Contains(newLine, "fmt.Sprintf(") && strings.Contains(newLine, "%v") {
 				newLine = strings.Replace(strings.Replace(newLine, "%v", "{}", -1), "fmt.Sprintf(", "std::format(", -1)
@@ -1001,7 +848,7 @@ func go2cpp(source string) string {
 			}
 			newLine += "\n"
 		}
-		if (!strings.HasSuffix(newLine, ";") && !has(endings, lastchar(trimmedLine)) || strings.Contains(trimmedLine, "=")) && !strings.HasPrefix(trimmedLine, "//") && (!has(endings, lastchar(newLine)) && !strings.Contains(newLine, "//")) {
+		if (!strings.HasSuffix(newLine, ";") && !has(constants.Endings, lastchar(trimmedLine)) || strings.Contains(trimmedLine, "=")) && !strings.HasPrefix(trimmedLine, "//") && (!has(constants.Endings, lastchar(newLine)) && !strings.Contains(newLine, "//")) {
 			if !inMultilineString {
 				newLine += ";"
 			}
@@ -1044,10 +891,10 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "./go_test_code/test1.txt"
+	inputFilename := "./go_test_code/test4.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
-			fmt.Println(versionString)
+			fmt.Println(constants.VersionString)
 			return
 		} else if os.Args[1] == "--help" {
 			fmt.Println("supported arguments:")
