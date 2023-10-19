@@ -15,179 +15,8 @@ import (
 	"github.com/Ra-hu-l/Transpiler-CP/src/utils"
 )
 
-// Will return the transformed string, and a bool if pretty printing may be needed
-func PrintStatement(source string) (string, bool) {
-
-	// Pick out and trim all arguments given to the print functon
-	args := utils.SplitArgs(utils.GreedyBetween(strings.TrimSpace(source), "(", ")"))
-
-	// Identify the print function
-	if !strings.Contains(source, "(") {
-		// Not a function call
-		return source, false
-	}
-
-	fname := strings.TrimSpace(source[:strings.Index(source, "(")])
-	//fmt.Println("FNAME", fname)
-
-	// Check if the function call ends with "ln" (println, fmt.Println)
-	addNewline := strings.HasSuffix(fname, "ln")
-	//fmt.Println("NEWLINE", addNewline)
-
-	// Check if the function call starts with "print" (as opposed to "Print")
-	lowercasePrint := strings.HasPrefix(fname, "print")
-	//fmt.Println("LOWERCASE PRINT", lowercasePrint)
-
-	// Check if all the arguments are literal strings
-	allLiteralStrings := true
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "\"") {
-			allLiteralStrings = false
-		}
-	}
-
-	// Check if all the arguments are literal numbers
-	allLiteralNumbers := true
-	for _, arg := range args {
-		if !isNum(arg) {
-			allLiteralNumbers = false
-		}
-	}
-
-	mayNeedPrettyPrint := !allLiteralStrings || !allLiteralNumbers
-
-	// --- enough information gathered, it's time to build the output code ---
-
-	if strings.HasSuffix(fname, "rintf") {
-		output := source
-		// TODO: Also support fmt.Fprintf, and format %v values differently.
-		//       Converting to an iostream expression is one possibility.
-		output = strings.Replace(output, "fmt.Printf", "printf", 1)
-		output = strings.Replace(output, "fmt.Fprintf", "fprintf", 1)
-		output = strings.Replace(output, "fmt.Sprintf", "sprintf", 1)
-		if strings.Contains(output, "%v") {
-			// TODO: Upgrade this in the future
-			output = strings.Replace(output, "%v", "%s", -1)
-			//panic("support for %v is not implemented yet")
-		}
-		return output, mayNeedPrettyPrint
-	}
-
-	outputName := "std::cout"
-	if lowercasePrint {
-		// print and println outputs to stderr
-		outputName = "std::cerr"
-	}
-	//fmt.Println("OUTPUT NAME", outputName)
-
-	// Useful values
-	pipe := " << "
-	blank := "\" \""
-	nl := "std::endl"
-
-	// Silence pipeNewline if the print function does not end with "ln"
-	pipeNewline := pipe + nl
-	if !addNewline {
-		pipeNewline = ""
-	}
-
-	// No arguments given?
-	if len(args) == 0 {
-		// Just output a newline
-		if addNewline {
-			return outputName + pipeNewline, false
-		}
-	}
-
-	// Only one argument given?
-	if len(args) == 1 {
-		if strings.TrimSpace(args[0]) == "" {
-			// Just output a newline
-			if addNewline {
-				return outputName + pipeNewline, false
-			}
-		}
-		if allLiteralStrings || allLiteralNumbers {
-			return outputName + pipe + args[0] + pipeNewline, false
-		}
-		output := "_format_output(" + outputName + ", " + args[0] + ")"
-		if addNewline {
-			output += ";\n" + outputName + pipeNewline
-		}
-		return output, true
-	}
-
-	// Several arguments given
-	//fmt.Println("SEVERAL ARGUMENTS", args)
-
-	// Almost everything should start with "pipe" and almost nothing should end with "pipe"
-	output := outputName
-	lastIndex := len(args) - 1
-	for i, arg := range args {
-		//fmt.Println("ARGUMENT", i, arg)
-		if strings.HasPrefix(arg, "\"") {
-			// Literal string
-			output += pipe + arg
-		} else if isNum(arg) {
-			// Literal number
-			output += pipe + arg
-		} else {
-			if i == 0 {
-				output = ""
-			} else {
-				output += ";\n"
-			}
-			output += "_format_output(" + outputName + ", " + arg + ");\n" + outputName
-		}
-		if i < lastIndex {
-			output += pipe + blank
-		} else {
-			output += pipeNewline
-		}
-	}
-
-	//fmt.Println("GENERATED OUTPUT", output)
-
-	return output, mayNeedPrettyPrint
-}
-
-func AddIncludes(source string) (output string) {
-	output = source
-
-	includeString := ""
-	for k, v := range constants.IncludeMap {
-		if strings.Contains(output, k) {
-			newInclude := "" + v + ""
-			if !strings.Contains(includeString, newInclude) {
-				includeString += newInclude
-			}
-
-		}
-	}
-	if constants.CppHasStdFormat {
-		//"std::format":                      "format",
-		k := "std::format"
-		v := "format"
-		if strings.Contains(output, k) {
-			newInclude := "#include <" + v + ">\n"
-			if !strings.Contains(includeString, newInclude) {
-				includeString += newInclude
-			}
-		}
-	}
-	return includeString + "\n" + output
-}
-
-func after(keyword, line string) string {
-	pos := strings.Index(line, keyword)
-	if pos == -1 {
-		return line
-	}
-	return line[pos+len(keyword):]
-}
-
 func DeferCall(source string) string {
-	trimmed := strings.TrimSpace(after("defer", source))
+	trimmed := strings.TrimSpace(utils.After("defer", source))
 
 	// This function handles three possibilities:
 	// * defer f()
@@ -240,7 +69,7 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 		// for (auto i = 0; i < std::size(l); i++) {
 
 		hashMapName := listName
-		if has(encounteredHashMaps, hashMapName) {
+		if utils.Has(encounteredHashMaps, hashMapName) {
 			// looping over the key of a hash map, not over the index of a list
 			return "for (const auto & [" + varName + ", " + varName + "__" + "] : " + hashMapName + ") {"
 		} else if varName == "_" {
@@ -262,7 +91,7 @@ func ForLoop(source string, encounteredHashMaps []string) string {
 		listName := fields[len(fields)-1]
 		hashMapName := listName
 
-		if has(encounteredHashMaps, hashMapName) {
+		if utils.Has(encounteredHashMaps, hashMapName) {
 			if indexvar == "_" {
 				// looping over the values of a hash map
 				hashMapHashKey := hashMapName + constants.HashMapSuffix
@@ -354,7 +183,7 @@ func VarDeclarations(source string) (string, []string) {
 				}
 				rightFields := strings.Fields(right)
 				if len(leftFields)-1 != len(rightFields) {
-					panic("var declaration has mismatching number of variables and values: " + left + " VS " + right)
+					panic("var declaration utils.Has mismatching number of variables and values: " + left + " VS " + right)
 				}
 				lastIndex := len(leftFields) - 1
 				varType := leftFields[lastIndex]
@@ -557,25 +386,6 @@ func HashElements(source, keyType string, keyForBoth bool) string {
 	return output + "}"
 }
 
-func CreateStrMethod(varNames []string) string {
-	var sb strings.Builder
-	sb.WriteString("std::string _str() {\n")
-	sb.WriteString("  std::stringstream ss;\n")
-	sb.WriteString("  ss << \"{\";\n")
-	for i, varName := range varNames {
-		if i > 0 {
-			sb.WriteString("  ss << \" \";\n")
-		}
-		sb.WriteString("  _format_output(ss, ")
-		sb.WriteString(varName)
-		sb.WriteString(");\n")
-	}
-	sb.WriteString("  ss << \"}\";")
-	sb.WriteString("  return ss.str();\n")
-	sb.WriteString("}\n")
-	return sb.String()
-}
-
 func go2cpp(source string) string {
 	functionVarMap := map[string]string{} // variable names encountered in the function so far, and their corresponding smart names
 	inMultilineString := false
@@ -678,7 +488,7 @@ func go2cpp(source string) string {
 		} else if strings.HasPrefix(trimmedLine, "fmt.Print") || strings.HasPrefix(trimmedLine, "print") {
 			// _ is if "pretty print" functionality may be needed, for non-literal strings and numbers
 			// var pp bool
-			newLine, _ = PrintStatement(trimmedLine)
+			newLine, _ = utils.PrintStatement(trimmedLine)
 			// if pp {
 			// 	usePrettyPrint = true
 			// }
@@ -706,7 +516,7 @@ func go2cpp(source string) string {
 								functionVarMap[name] = value + "0"
 							} else {
 								// Increase the number in the current value by 1
-								num := trailingNumber(value)
+								num := utils.TrailingNumber(value)
 								num++
 								functionVarMap[name] = name + strconv.Itoa(num)
 							}
@@ -783,7 +593,7 @@ func go2cpp(source string) string {
 			newLine = DeferCall(line)
 		} else if strings.HasPrefix(trimmedLine, "if ") {
 			newLine = IfSentence(line)
-			// TODO: Short variable names has the potential to ruin if expressions this way, do a smarter replacement
+			// TODO: Short variable names utils.Has the potential to ruin if expressions this way, do a smarter replacement
 			// TODO: Also do this for for loops, switches and other cases where this makes sense
 			for k, v := range functionVarMap {
 				newLine = strings.Replace(newLine, k, v, -1)
@@ -831,7 +641,7 @@ func go2cpp(source string) string {
 			}
 		}
 
-		if currentFunctionName == "main" && trimmedLine == "}" && curlyCount == 0 { // curlyCount has already been decreased for this line
+		if currentFunctionName == "main" && trimmedLine == "}" && curlyCount == 0 { // curlyCount utils.Has already been decreased for this line
 			newLine = strings.Replace(trimmedLine, "}", "return 0;\n}", 1)
 		}
 
@@ -839,7 +649,7 @@ func go2cpp(source string) string {
 			// If the struct is being closed, add a semicolon
 			if inStruct {
 				// Create a _str() method for this struct
-				newLine = CreateStrMethod(encounteredStructNames) + newLine + ";"
+				newLine = utils.CreateStrMethod(encounteredStructNames) + newLine + ";"
 
 				inStruct = false
 			} else if closingBracketNeedsASemicolon {
@@ -848,7 +658,7 @@ func go2cpp(source string) string {
 			}
 			newLine += "\n"
 		}
-		if (!strings.HasSuffix(newLine, ";") && !has(constants.Endings, lastchar(trimmedLine)) || strings.Contains(trimmedLine, "=")) && !strings.HasPrefix(trimmedLine, "//") && (!has(constants.Endings, lastchar(newLine)) && !strings.Contains(newLine, "//")) {
+		if (!strings.HasSuffix(newLine, ";") && !utils.Has(constants.Endings, utils.Lastchar(trimmedLine)) || strings.Contains(trimmedLine, "=")) && !strings.HasPrefix(trimmedLine, "//") && (!utils.Has(constants.Endings, utils.Lastchar(newLine)) && !strings.Contains(newLine, "//")) {
 			if !inMultilineString {
 				newLine += ";"
 			}
@@ -891,7 +701,7 @@ func main() {
 	compile := true
 	clangFormat := true
 
-	inputFilename := "./go_test_code/test4.txt"
+	inputFilename := "./go_test_code/test2.txt"
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--version" {
 			fmt.Println(constants.VersionString)
