@@ -1,148 +1,120 @@
 package main
 
 import (
-	"unicode"
-)
-
-type Tokenkind uint
-
-const (
-	syntaxToken     Tokenkind = iota // (  )
-	integerToken                     //1 2 3 12
-	identifierToken                  //+ -
-
+	"fmt"
+	_ "fmt"
+	"regexp"
 )
 
 type Token struct {
-	value    string
-	kind     Tokenkind
-	location int
+	Type  string
+	Value string
 }
 
-/*
-remove white space till a character is found and returns
-the index of the character
-*/
-func removespace(source []rune, cursor int) int {
-	for cursor < len(source) {
-		if unicode.IsSpace(source[cursor]) {
-			cursor++
-			continue
-		}
-		break
-	}
-	return cursor
+type Lexer struct {
+	input  string
+	pos    int
+	tokens []Token
 }
 
-/*
-	search for SyntaxTokens , if token is found return next locations
-
-and and the token with its location else return locations and nil
-*/
-func lexSyntaxToken(source []rune, cursor int) (int, *Token) {
-	if source[cursor] == '(' || source[cursor] == ')' {
-		return cursor + 1, &Token{
-			value:    string([]rune{source[cursor]}),
-			kind:     syntaxToken,
-			location: cursor,
-		}
-	}
-	return cursor, nil
+func NewLexer(input string) *Lexer {
+	return &Lexer{input: input, pos: 0}
 }
 
-/* append all the integer tokens and if no integer token is found
-we will return the origin cursor index */
+func (l *Lexer) NextToken() *Token {
+	if l.pos >= len(l.input) {
+		return nil
+	}
 
-func lexIntegerToken(source []rune, cursor int) (int, *Token) {
-	originalCursor := cursor
-	var value []rune
-	for cursor < len(source) {
-		r := source[cursor]
-		if r >= '0' && r <= '9' {
-			value = append(value, r)
-			cursor++
-			continue
+	// Match regular expressions to identify tokens
+
+	re := regexp.MustCompile(`([[:space:]]+)|([a-zA-Z]+)|([0-9]+)|([+\-*/%=])|(\(|\))|(\{|\})`)
+	if match := re.FindStringIndex(l.input[l.pos:]); match != nil {
+		l.pos += match[1]
+		tokenType := ""
+		tokenValue := l.input[l.pos-match[1] : l.pos]
+
+		switch tokenValue {
+		case "package main":
+			tokenType = "package"
+		case "func":
+			tokenType = "Func"
+		case "main":
+			tokenType = "main"
+		case "(":
+			tokenType = "OpenParen"
+		case ")":
+			tokenType = "CloseParen"
+		case "{":
+			tokenType = "OpenBrace"
+		case "}":
+			tokenType = "CloseBrace"
+		case "+":
+			tokenType = "Plus"
+		case "-":
+			tokenType = "Minus"
+		case "*":
+			tokenType = "Asterisk"
+		case "/":
+			tokenType = "Slash"
+		case "=":
+			tokenType = "Equals"
+		case " ":
+			tokenType = "blank space"
+		case "\"":
+			tokenType = "double quotes"
+		case "fmt.Println":
+			tokenType = "print function"
+		default:
+			tokenType = "identifier"
 		}
-		break
-	}
-	if len(value) == 0 {
-		return originalCursor, nil
+
+		return &Token{Type: tokenType, Value: tokenValue}
 	}
 
-	return cursor, &Token{
-		value:    string(value),
-		kind:     integerToken,
-		location: originalCursor,
-	}
+	// If no regular expression matches, return an error token
+
+	return &Token{Type: "Error", Value: string(l.input[l.pos])}
 }
 
-/*
- */
-func lexIdentifierToken(source []rune, cursor int) (int, *Token) {
-	originalCursor := cursor
-	var value []rune
-	for cursor < len(source) {
+func LEX(input string) {
 
-		if !unicode.IsSpace(source[cursor]) {
-			value = append(value, source[cursor])
-			cursor++
-			continue
+	var res []Token
+
+	//	i:=0
+	l := NewLexer(input)
+	t := true
+	for token := l.NextToken(); token != nil; token = l.NextToken() {
+
+		if token.Value == "(" {
+			t = false
+		} else if token.Value == ")" {
+			t = true
 		}
-		break
-	}
-	if len(value) == 0 {
-		return originalCursor, nil
-	}
 
-	return cursor, &Token{
-		value:    string(value),
-		kind:     identifierToken,
-		location: originalCursor,
-	}
-}
+		if token.Value != " " && t == true {
+			//fmt.Printf("%s: %s\n", token.Type, token.Value)
 
-/*
-Takes a slice/arrays of rune type and returns
-slice  of items(Tokens) which will be used for
-parsing
-*/
-func Lex(input string) []Token {
-	source := []rune(input)
-	var Tokens []Token
-	var t *Token
-	cursor := 0
+		} else if t == false {
+			//fmt.Printf("%s: %s\n", token.Type, token.Value)
 
-	for cursor < len(source) {
-		// remove white space
-		cursor = removespace(source, cursor)
-		if cursor == len(source) {
-			break
 		}
-		// check for syntax tokens : ( )
-		cursor, t = lexSyntaxToken(source, cursor)
-		if t != nil {
-			Tokens = append(Tokens, *t)
+
+		if token.Value == " " || token.Value == "\n" || token.Value == "\t" {
 			continue
 		}
 
-		// check for integer tokens : 1 2 31
-		cursor, t = lexIntegerToken(source, cursor)
-		if t != nil {
-			Tokens = append(Tokens, *t)
-			continue
-		}
+		//		fmt.Printf("%s \n", token.Value)
 
-		// check for identifier tokens : + -
-		cursor, t = lexIdentifierToken(source, cursor)
-		if t != nil {
-			Tokens = append(Tokens, *t)
-			continue
-		}
-
-		// exceptions
-		println("error occured")
-		println(source[cursor])
-
+		res = append(res, Token{
+			Type:  token.Type,
+			Value: token.Value,
+		})
 	}
-	return Tokens
+	fmt.Println(res)
+
+	println("__________")
+
+	Ast(res)
+
 }

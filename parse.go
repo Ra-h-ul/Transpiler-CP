@@ -1,78 +1,92 @@
 package main
 
-type valueKind uint
-
-const (
-	literalValue valueKind = iota
-	listValue
+import (
+	"fmt"
+	"strings"
 )
 
-type value struct {
-	kind    valueKind
-	literal *Token
-	list    *ast
+type Tokenx struct {
+	Type  string
+	Value string
 }
 
-func (v value) pretty() string {
-	if v.kind == literalValue {
-		return v.literal.value
-	}
-
-	return v.list.pretty()
+type Node struct {
+	Type     string
+	Value    string
+	Children []Node
 }
 
-type ast []value
-
-func (a ast) pretty() string {
-	p := "("
-	for _, value := range a {
-		p += value.pretty()
-		p += " "
-	}
-
-	return p + ")"
+func NewNode(Type string, Value string) *Node {
+	return &Node{Type: Type, Value: Value}
 }
 
-func Parse(tokens []Token, index int) (ast, int) {
-	var a ast
+func AddChild(node *Node, child *Node) {
+	node.Children = append(node.Children, *child)
+}
 
-	token := tokens[index]
-	if !(token.kind == syntaxToken &&
-		token.value == "(") {
-		panic("Should be an open parenthesis")
-	}
-	index++
+func ParseAST(tokens []Token) *Node {
+	root := NewNode("Root", "")
 
-	for index < len(tokens) {
-		token := tokens[index]
-		if token.kind == syntaxToken &&
-			token.value == "(" {
+	for _, token := range tokens {
+		switch token.Type {
+		case "package":
+			AddChild(root, NewNode("Idenpackagetifier", token.Value))
+		case "StringLiteral":
+			AddChild(root, NewNode("StringLiteral", token.Value))
+		case "NumberLiteral":
+			AddChild(root, NewNode("NumberLiteral", token.Value))
+		case "func":
+			AddChild(root, NewNode("func", token.Value))
+		case "main":
+			AddChild(root, NewNode("main", token.Value))
 
-			child, nextIndex := Parse(tokens, index)
-			a = append(a, value{
-				kind: listValue,
-				list: &child,
-			})
-			index = nextIndex
-			continue
+		case "OpenParen":
+			AddChild(root, NewNode("OpenParen", token.Value))
+		case "CloseParen":
+			AddChild(root, NewNode("CloseParen", token.Value))
+		case "OpenBrace":
+			AddChild(root, NewNode("OpenBrace", token.Value))
+		case "CloseBrace":
+			AddChild(root, NewNode("CloseBrace", token.Value))
+		case "Plus":
+			AddChild(root, NewNode("Plus", token.Value))
+		case "Minus":
+			AddChild(root, NewNode("Minus", token.Value))
+		case "Asterisk":
+			AddChild(root, NewNode("Asterisk", token.Value))
+		case "Slash":
+			AddChild(root, NewNode("Slash", token.Value))
+		case "Equals":
+			AddChild(root, NewNode("Equals", token.Value))
+		case "blank space":
+			AddChild(root, NewNode("blank space", token.Value))
+		case "double quotes":
+			AddChild(root, NewNode("double quotes", token.Value))
+		case "print function":
+			AddChild(root, NewNode("print function", token.Value))
+
+		default:
+			AddChild(root, NewNode("identifier", token.Value))
 		}
 
-		if token.kind == syntaxToken &&
-			token.value == ")" {
-			return a, index + 1
-		}
-
-		a = append(a, value{
-			kind:    literalValue,
-			literal: &token,
-		})
-		index++
 	}
 
-	if tokens[index-1].kind == syntaxToken &&
-		tokens[index-1].value != ")" {
-		panic("should be a closing")
-	}
+	return root
+}
 
-	return a, index
+func PrintAST(node *Node, indent int) {
+	fmt.Printf("%s%s: %s\n", strings.Repeat(" ", indent), node.Type, node.Value)
+
+	for _, child := range node.Children {
+		PrintAST(&child, indent+1)
+	}
+}
+
+func Ast(T []Token) {
+	tokens := T
+
+	root := ParseAST(tokens)
+
+	// Print the AST tree.
+	PrintAST(root, 0)
 }

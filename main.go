@@ -339,6 +339,10 @@ func main() {
 	} else {
 		sourceData, err = ioutil.ReadAll(os.Stdin)
 	}
+
+	ip := (string(sourceData))
+	LEX(ip)
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -400,7 +404,7 @@ template <typename T>
 
 		cppSource = `#include <bits/stdc++.h>` + cppSource
 		cppSource = formatting(cppSource)
-		fmt.Println(cppSource)
+		//fmt.Println(cppSource)
 		outputFileName := "cpp_test_output/" + strings.Split(inputFilename, "/")[2] + ".cpp"
 		writeFile(outputFileName, cppSource)
 
@@ -422,7 +426,7 @@ template <typename T>
 			log.Fatal(err)
 		}
 	} else {
-		fmt.Println(cppSource)
+		//fmt.Println(cppSource)
 	}
 
 }
