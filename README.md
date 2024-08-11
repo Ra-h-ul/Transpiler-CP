@@ -7,7 +7,7 @@ import (
 )
 
 func addsub(x int) (a, b int) {
-    return x + 2, x - 2
+    return x + 3, x - 2
 }
 
 func main() {
